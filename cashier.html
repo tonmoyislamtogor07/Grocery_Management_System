@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cashier Dashboard — Sufian Store GMS</title>
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/cashier.css">
+</head>
+<body data-page="cashier">
+<div class="app" id="app-root">
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="eyebrow-date" id="todayDate"></div>
+        <h1 class="page-title">Cashier Dashboard</h1>
+        <div class="page-desc">Today's counter summary — today's sales only. No profit, purchase or expense figures here.</div>
+      </div>
+      <a href="sales.html" class="btn btn-accent">+ New Sale</a>
+    </div>
+
+    <div class="content">
+      <div class="stat-row" id="statRow"></div>
+
+      <div class="ledger-panel">
+        <div class="ledger-panel-head"><h2>Quick Actions</h2></div>
+        <div class="ledger-panel-body">
+          <div class="quick-actions">
+            <a href="sales.html" class="quick-action">
+              <span class="quick-action-icon">&#128722;</span>
+              <span class="quick-action-title">New Sale</span>
+              <span class="quick-action-desc">Open the billing screen</span>
+            </a>
+            <a href="customers.html" class="quick-action">
+              <span class="quick-action-icon">&#128100;</span>
+              <span class="quick-action-title">Add Customer</span>
+              <span class="quick-action-desc">Save a regular buyer</span>
+            </a>
+            <a href="#todaySales" class="quick-action">
+              <span class="quick-action-icon">&#128203;</span>
+              <span class="quick-action-title">Today's Sales</span>
+              <span class="quick-action-desc">See today's bills below</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="ledger-panel" id="todaySales">
+        <div class="ledger-panel-head">
+          <h2>Today's Sales</h2>
+          <a href="sales.html" class="btn btn-ghost btn-sm">Open billing</a>
+        </div>
+        <div class="ledger-panel-body ledger-panel-body--flush">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Receipt #</th><th>Customer</th><th>Time</th><th class="cell-num">Items</th><th class="cell-num">Total</th><th class="cell-num">Cash</th><th>Due</th><th></th></tr>
+              </thead>
+              <tbody id="todayBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+<script src="js/cashier.js"></script>
+</body>
+</html>
