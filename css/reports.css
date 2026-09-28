@@ -1,0 +1,37 @@
+/* Reports page rules (base in common.css). */
+/* Toast (shared helper, kept for safety — same values as common base). */
+.toast {
+  position: fixed;
+  bottom: 22px; right: 22px;
+  background: var(--green-900);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: var(--radius);
+  font-size: 13.5px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  z-index: 200;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity .18s ease, transform .18s ease;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.toast-danger { background: var(--red); }
+/* Reports page: report toolbar + summary panels. */
+
+/* Panel head wraps on narrow screens (was inline style). */
+.reports-head { flex-wrap: wrap; }
+
+/* Summary stat rows inside reports (was inline style). */
+.stat-row--spaced { margin-bottom: 18px; }
+
+/* Profit cell coloring (was inline style). */
+.profit-pos { color: var(--green-700); font-weight: 600; }
+.profit-neg { color: var(--red); font-weight: 600; }
+
+/* Inventory section subtitles (were inline styles). */
+.report-subtitle { font-size: 14.5px; margin-bottom: 10px; }
+.report-subtitle--spaced { font-size: 14.5px; margin: 22px 0 10px; }
+
+/* Explainer line above the profit table. */
+.report-note { margin-bottom: 10px; font-size: 12.5px; }

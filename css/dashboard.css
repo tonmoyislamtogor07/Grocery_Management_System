@@ -1,0 +1,31 @@
+/* Dashboard page rules (base in common.css). */
+/* Toast (shared helper, kept for safety — same values as common base). */
+.toast {
+  position: fixed;
+  bottom: 22px; right: 22px;
+  background: var(--green-900);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: var(--radius);
+  font-size: 13.5px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+  z-index: 200;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity .18s ease, transform .18s ease;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+.toast.toast-danger { background: var(--red); }
+/* Dashboard: stat-row + low-stock watch + top-selling / recent-sales panels. */
+
+/* Dashboard uses .invoice-shell for the two-column bottom section. */
+.invoice-shell {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+/* Two equal columns for the bottom section (was inline style). */
+.dashboard-columns { grid-template-columns: 1fr 1fr; }

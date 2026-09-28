@@ -1,0 +1,81 @@
+/* Login page rules (base in common.css). */
+/* Login page only. Loaded by index.html. */
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--green-900);
+  background-image:
+    linear-gradient(rgba(22,51,42,0.94), rgba(22,51,42,0.94)),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px, transparent 1px, transparent 34px);
+  padding: 20px;
+}
+
+.login-card {
+  background: var(--paper);
+  border-radius: var(--radius);
+  width: 100%;
+  max-width: 380px;
+  padding: 30px 28px 26px;
+  border-top: 4px solid var(--turmeric);
+}
+
+.login-card--wide { max-width: 460px; }
+
+.login-brand { text-align: center; margin-bottom: 24px; }
+
+.login-brand .mark {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--green-900);
+  display: block;
+}
+
+.login-brand .sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.login-hint {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--sage-100);
+  border-radius: var(--radius);
+  padding: 7px 10px;
+  margin-top: 14px;
+}
+
+.login-card .mark {
+  font-family: var(--font-display);
+  font-size: 21px;
+  color: var(--green-900);
+}
+.login-card .sub { font-size: 12.5px; color: var(--muted); margin-bottom: 22px; }
+
+.login-error {
+  display: none;
+  background: var(--red-bg);
+  color: var(--red);
+  font-size: 12.5px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+}
+.login-error.show { display: block; }
+
+.login-foot {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 18px;
+}
+
+/* Extracted from inline styles in index.html (same values, no visual change). */
+.login-remember-label { margin: 0; }
+.btn--block-center { width: 100%; justify-content: center; }

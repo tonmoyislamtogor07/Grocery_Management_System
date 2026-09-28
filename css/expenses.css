@@ -1,0 +1,5 @@
+/* Expenses page rules (base in common.css). */
+/* Expenses page: stat-row summary + expense table + modal. */
+
+/* Smaller stat value for the top-category card (was inline style). */
+.stat-value--sm { font-size: 18px; }

@@ -1,0 +1,18 @@
+/* Purchases page rules (base in common.css). */
+/* Purchases page: GRN table + purchase form + line-items table. */
+
+/* Wide modal for the GRN form (was inline style). */
+.modal--wide { max-width: 680px; }
+
+/* Line-items table column widths (were inline styles). */
+.th-qty { width: 90px; }
+.th-price { width: 130px; }
+.th-total { width: 110px; }
+
+/* Spacing for the "+ Add item" button (was inline style). */
+.add-line-btn { margin-top: 8px; }
+
+/* Footer row under the items table (was inline style). */
+.purchase-foot { margin-top: 6px; }
+.purchase-hint { font-size: 12.5px; }
+.purchase-total { font-family: var(--font-display); font-size: 17px; color: var(--green-900); }

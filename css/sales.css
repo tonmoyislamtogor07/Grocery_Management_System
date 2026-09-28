@@ -1,0 +1,58 @@
+/* Sales page rules (base in common.css). */
+/* Sales page: invoice layout + cash-memo receipt. */
+
+.invoice-shell {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.receipt {
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 20px;
+  font-family: var(--font-body);
+}
+.receipt-head { text-align: center; border-bottom: 1px dashed var(--rule-dark); padding-bottom: 12px; margin-bottom: 12px; }
+.receipt-head .shop-name { font-family: var(--font-display); font-size: 18px; color: var(--green-900); }
+.receipt-head .shop-addr { font-size: 11.5px; color: var(--muted); }
+.receipt-line { display: flex; justify-content: space-between; font-size: 13px; padding: 5px 0; border-bottom: 1px dotted var(--rule); }
+.receipt-total-row { display: flex; justify-content: space-between; font-size: 14.5px; font-weight: 700; padding-top: 10px; margin-top: 8px; border-top: 1px dashed var(--rule-dark); color: var(--green-900); }
+.receipt-foot { text-align: center; font-size: 11.5px; color: var(--muted); margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--rule-dark); }
+
+.receipt-actions { margin-top: 12px; display: flex; justify-content: flex-end; }
+
+/* Line-items table column widths (were inline styles). */
+.th-qty { width: 90px; }
+.th-price { width: 120px; }
+.th-total { width: 110px; }
+
+/* Spacing for the "+ Add item" button (was inline style). */
+.add-line-btn { margin-top: 8px; }
+
+/* Receipt meta + empty-state text (were inline styles). */
+.receipt-meta { font-size: 12px; margin-bottom: 8px; }
+.receipt-empty { font-size: 12.5px; padding: 8px 0; }
+.receipt-line--plain { border-bottom: none; }
+
+/* Sales history panel spacing (was inline style). */
+.sales-history { margin-top: 22px; }
+
+/* Print: only the cash memo receipt. */
+@media print {
+  body { background: #fff; }
+  body * { visibility: hidden; }
+  #receiptPreview, #receiptPreview * { visibility: visible; }
+  #receiptPreview {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    margin: 0 auto;
+    width: 80mm;
+    max-width: 80mm;
+    border: none;
+    padding: 0 4px;
+  }
+  .receipt-actions { display: none !important; }
+}
