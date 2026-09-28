@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suppliers — Sufian Store GMS</title>
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/suppliers.css">
+</head>
+<body data-page="suppliers">
+<div class="app" id="app-root">
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="eyebrow-date" id="todayDate"></div>
+        <h1 class="page-title">Suppliers</h1>
+        <div class="page-desc">Contact details and purchase history for everyone you buy stock from.</div>
+      </div>
+      <button class="btn btn-primary" id="addBtn">+ Add supplier</button>
+    </div>
+
+    <div class="content">
+      <div class="ledger-panel">
+        <div class="ledger-panel-head">
+          <h2>All suppliers</h2>
+          <div class="toolbar">
+            <input type="text" id="searchInput" class="search-input" placeholder="Search by name or phone...">
+          </div>
+        </div>
+        <div class="ledger-panel-body ledger-panel-body--flush">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>Supplier name</th><th>Phone</th><th>Address</th><th class="cell-num">Purchases</th><th></th></tr></thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">Add supplier</h3>
+      <button class="modal-close" id="modalClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="supplierForm">
+        <input type="hidden" id="supplierId">
+        <div class="field">
+          <label for="supplierName">Supplier name</label>
+          <input type="text" id="supplierName" placeholder="e.g. Khulna Wholesale Traders">
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="supplierPhone">Phone</label>
+            <input type="tel" id="supplierPhone" placeholder="01XXXXXXXXX">
+          </div>
+          <div class="field">
+            <label for="supplierAddress">Address</label>
+            <input type="text" id="supplierAddress" placeholder="Area, city">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save supplier</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+<script src="js/suppliers.js"></script>
+</body>
+</html>
+
+
+
+

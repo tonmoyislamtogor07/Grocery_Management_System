@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in — Sufian Store GMS</title>
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/login.css">
+</head>
+<body class="login-page" data-page="login">
+
+  <div class="login-card">
+    <div class="login-brand">
+      <span class="mark">SUFIAN STORE</span>
+      <div class="sub">Grocery Management System</div>
+    </div>
+
+    <div class="login-error" id="loginError">Enter both a username and a password to continue.</div>
+
+    <form id="loginForm" novalidate>
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" placeholder="Enter username" autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password">
+      </div>
+      <div class="field checkbox-row">
+        <input type="checkbox" id="remember">
+        <label for="remember" class="login-remember-label">Keep me signed in</label>
+      </div>
+      <button type="submit" class="btn btn-primary btn--block-center" id="loginBtn">SIGN IN</button>
+    </form>
+
+    <div class="login-foot">Sufian Store &middot; Islamnagar, Gollamari, Khulna</div>
+  </div>
+
+  <script src="js/store.js"></script>
+  <script>
+    // No role picker here — the backend (api/auth.php) finds the account by
+    // username/password and returns its role itself:
+    // admin -> Owner, manager -> Manager, cashier -> Cashier.
+    var ROLE_HOME = { owner: 'dashboard.html', manager: 'dashboard.html', cashier: 'cashier.html' };
+
+    document.getElementById('loginForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var username = document.getElementById('username').value.trim();
+      var password = document.getElementById('password').value;
+      var errorBox = document.getElementById('loginError');
+      var btn = document.getElementById('loginBtn');
+
+      if (!username || !password) {
+        errorBox.textContent = 'Enter both a username and a password to continue.';
+        errorBox.classList.add('show');
+        return;
+      }
+      btn.disabled = true;
+      btn.textContent = 'SIGNING IN...';
+      try {
+        var user = await GMS.session.login(username, password);
+        window.location.href = ROLE_HOME[user.role] || 'dashboard.html';
+      } catch (err) {
+        errorBox.textContent = err.message || 'Login failed. Is the PHP server running?';
+        errorBox.classList.add('show');
+        btn.disabled = false;
+        btn.textContent = 'SIGN IN';
+      }
+    });
+
+    // If already logged in, skip straight to that role's home page.
+    fetch('api/auth.php?action=me', { credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok) return null;
+      return r.json();
+    }).then(function (body) {
+      if (body && body.ok && body.user) {
+        var role = body.user.role || 'owner';
+        try {
+          sessionStorage.setItem('gms_session', body.user.username);
+          sessionStorage.setItem('gms_role', role);
+          sessionStorage.setItem('gms_role_label', body.user.role_label || '');
+        } catch (e) {}
+        window.location.href = ROLE_HOME[role] || 'dashboard.html';
+      }
+    }).catch(function () {});
+  </script>
+</body>
+</html>

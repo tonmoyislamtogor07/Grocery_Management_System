@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Purchases — Sufian Store GMS</title>
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/purchases.css">
+</head>
+<body data-page="purchases">
+<div class="app" id="app-root">
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="eyebrow-date" id="todayDate"></div>
+        <h1 class="page-title">Purchases</h1>
+        <div class="page-desc">Record stock received from suppliers — this automatically tops up inventory.</div>
+      </div>
+      <button class="btn btn-primary" id="newPurchaseBtn">+ Record purchase</button>
+    </div>
+
+    <div class="content">
+      <div class="ledger-panel">
+        <div class="ledger-panel-head">
+          <h2>Purchase history</h2>
+          <div class="toolbar">
+            <input type="text" id="searchInput" class="search-input" placeholder="Search by supplier or ID...">
+          </div>
+        </div>
+        <div class="ledger-panel-body ledger-panel-body--flush">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Purchase #</th><th>Supplier</th><th>Date</th><th class="cell-num">Items</th><th class="cell-num">Total</th><th></th></tr></thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal modal--wide">
+    <div class="modal-head">
+      <h3>Record a purchase (GRN)</h3>
+      <button class="modal-close" id="modalClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="purchaseForm">
+        <div class="form-grid">
+          <div class="field">
+            <label for="purchaseSupplier">Supplier</label>
+            <select id="purchaseSupplier"></select>
+          </div>
+          <div class="field">
+            <label for="purchaseDate">Delivery date</label>
+            <input type="date" id="purchaseDate">
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Items received</label>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Product</th><th class="th-qty">Qty</th><th class="th-price">Unit price</th><th class="cell-num th-total">Line total</th><th></th></tr></thead>
+              <tbody id="lineItemsBody"></tbody>
+            </table>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm add-line-btn" id="addLineBtn">+ Add item</button>
+        </div>
+
+        <div class="flex-between purchase-foot">
+          <span class="text-muted purchase-hint">Stock will increase automatically on save.</span>
+          <div class="purchase-total">Total: <span id="purchaseTotal">?0.00</span></div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save purchase</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+<script src="js/purchases.js"></script>
+</body>
+</html>
+
+
+
+

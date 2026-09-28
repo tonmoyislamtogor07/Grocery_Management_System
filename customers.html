@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Customers — Sufian Store GMS</title>
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/customers.css">
+</head>
+<body data-page="customers">
+<div class="app" id="app-root">
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="eyebrow-date" id="todayDate"></div>
+        <h1 class="page-title">Customers</h1>
+        <div class="page-desc">Optional contact details for regular customers. Walk-ins don't need a record.</div>
+      </div>
+      <button class="btn btn-primary" id="addBtn">+ Add customer</button>
+    </div>
+
+    <div class="content">
+      <div class="ledger-panel">
+        <div class="ledger-panel-head">
+          <h2>All customers</h2>
+          <div class="toolbar">
+            <input type="text" id="searchInput" class="search-input" placeholder="Search by name or phone...">
+          </div>
+        </div>
+        <div class="ledger-panel-body ledger-panel-body--flush">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th class="cell-num">Purchases made</th><th></th></tr></thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">Add customer</h3>
+      <button class="modal-close" id="modalClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="customerForm">
+        <input type="hidden" id="customerId">
+        <div class="field">
+          <label for="customerName">Customer name</label>
+          <input type="text" id="customerName" placeholder="e.g. Karim Mia">
+        </div>
+        <div class="field">
+          <label for="customerPhone">Phone <span class="text-muted">(optional)</span></label>
+          <input type="tel" id="customerPhone" placeholder="01XXXXXXXXX">
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save customer</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+<script src="js/customers.js"></script>
+</body>
+</html>
+
+
+
+
