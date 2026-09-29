@@ -1,4 +1,4 @@
-/* ==========================================================================
+   /* ==========================================================================
    store.js — API-backed data layer (PHP + MySQL).
    Same GMS.* names the pages already use, but every read/write now hits
    the PHP API instead of localStorage dummy data. No dummy data here.
