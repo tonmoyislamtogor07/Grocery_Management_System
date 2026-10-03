@@ -16,7 +16,8 @@ document.addEventListener('DOMContentLoaded', async function () {
   async function productOptions(selectedId) {
     const all = await GMS.products.all();
     return all.map(function (p) {
-      return '<option value="' + p.id + '" data-price="' + p.price + '"' + (String(p.id) === String(selectedId) ? ' selected' : '') + '>' + p.name + '</option>';
+      const cost = (p.purchasePrice !== undefined && p.purchasePrice !== null) ? p.purchasePrice : p.price;
+      return '<option value="' + p.id + '" data-price="' + cost + '"' + (String(p.id) === String(selectedId) ? ' selected' : '') + '>' + p.name + '</option>';
     }).join('');
   }
 

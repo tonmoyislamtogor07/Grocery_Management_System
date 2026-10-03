@@ -15,9 +15,12 @@ try {
         }
         $rows = $pdo->query('SELECT * FROM suppliers ORDER BY supplier_name')->fetchAll();
         $counts = $pdo->query('SELECT supplier_id, COUNT(*) c FROM purchases GROUP BY supplier_id')->fetchAll(PDO::FETCH_KEY_PAIR);
-        $data = array_map(function ($r) use ($counts) {
+        try { $prodCounts = $pdo->query('SELECT supplier_id, COUNT(DISTINCT product_id) c FROM product_suppliers GROUP BY supplier_id')->fetchAll(PDO::FETCH_KEY_PAIR); }
+        catch (Throwable $e) { $prodCounts = []; }
+        $data = array_map(function ($r) use ($counts, $prodCounts) {
             $m = map_supplier($r);
             $m['purchaseCount'] = (int)($counts[$r['supplier_id']] ?? 0);
+            $m['productCount'] = (int)($prodCounts[$r['supplier_id']] ?? 0);
             return $m;
         }, $rows);
         send_json(['ok' => true, 'data' => $data]);

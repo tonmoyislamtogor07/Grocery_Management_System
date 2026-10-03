@@ -30,14 +30,24 @@ INSERT INTO `customers` (`customer_id`, `customer_name`, `phone`, `address`) VAL
 (3, 'Abdul Malek', '01777889900', 'Boro Bazar, Khulna');
 
 -- Final stock = opening + purchases - sales (see movements below).
-INSERT INTO `products` (`product_id`, `product_name`, `category_id`, `supplier_id`, `purchase_price`, `selling_price`, `stock_quantity`, `minimum_stock`, `expiry_date`) VALUES
-(1, 'Miniket Rice (25kg)', 1, 1, 1750.00, 1850.00, 14, 5, '2027-01-15'),
-(2, 'Rupchanda Soybean Oil (5L)', 2, 1, 880.00, 940.00, 3, 6, '2027-06-01'),
-(3, 'Olympic Energy Biscuit', 3, 3, 12.00, 15.00, 120, 30, '2026-09-20'),
-(4, 'Fresh Milk (1L Pack)', 4, 2, 85.00, 95.00, 26, 10, '2026-09-10'),
-(5, 'Lux Soap (100g)', 5, 3, 38.00, 45.00, 60, 15, '2028-01-01'),
-(6, 'Nazirshail Rice (25kg)', 1, 1, 1550.00, 1650.00, 4, 5, '2027-02-10'),
-(7, 'ACI Pure Salt (1kg)', 1, 3, 32.00, 40.00, 72, 20, '2028-05-01');
+INSERT INTO `products` (`product_id`, `product_name`, `category_id`, `purchase_price`, `selling_price`, `stock_quantity`, `minimum_stock`, `expiry_date`) VALUES
+(1, 'Miniket Rice (25kg)', 1, 1750.00, 1850.00, 14, 5, '2027-01-15'),
+(2, 'Rupchanda Soybean Oil (5L)', 2, 880.00, 940.00, 3, 6, '2027-06-01'),
+(3, 'Olympic Energy Biscuit', 3, 12.00, 15.00, 120, 30, '2026-09-20'),
+(4, 'Fresh Milk (1L Pack)', 4, 85.00, 95.00, 26, 10, '2026-09-10'),
+(5, 'Lux Soap (100g)', 5, 38.00, 45.00, 60, 15, '2028-01-01'),
+(6, 'Nazirshail Rice (25kg)', 1, 1550.00, 1650.00, 4, 5, '2027-02-10'),
+(7, 'ACI Pure Salt (1kg)', 1, 32.00, 40.00, 72, 20, '2028-05-01');
+
+-- Allowed sources (migrated from old products.supplier_id).
+INSERT INTO `product_suppliers` (`product_id`, `supplier_id`) VALUES
+(1, 1),
+(2, 1),
+(3, 3),
+(4, 2),
+(5, 3),
+(6, 1),
+(7, 3);
 
 INSERT INTO `purchases` (`purchase_id`, `supplier_id`, `total_amount`, `purchase_date`) VALUES
 (1, 1, 29900.00, '2026-08-20 10:00:00'),

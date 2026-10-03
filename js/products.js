@@ -15,9 +15,28 @@ document.addEventListener('DOMContentLoaded', async function () {
     }).join('');
   }
 
+  // Option B: multiple suppliers per product (checkbox list, optional).
+  async function supplierCheckboxes(selectedIds) {
+    const sups = await GMS.suppliers.all();
+    const sel = (selectedIds || []).map(Number);
+    if (sups.length === 0) return '<span class="muted-cell">No suppliers yet — add one first.</span>';
+    return sups.map(function (s) {
+      const checked = sel.indexOf(Number(s.id)) !== -1 ? ' checked' : '';
+      return '<label><input type="checkbox" class="supplier-check" value="' + s.id + '"' + checked + '> ' + s.name + '</label>';
+    }).join('');
+  }
+
+  function selectedSupplierIds() {
+    return Array.prototype.map.call(
+      document.querySelectorAll('#productSuppliers .supplier-check:checked'),
+      function (el) { return Number(el.value); }
+    ).filter(function (n) { return !isNaN(n) && n > 0; });
+  }
+
   async function populateFilters() {
     document.getElementById('categoryFilter').insertAdjacentHTML('beforeend', await categoryOptions(''));
     document.getElementById('productCategory').innerHTML = await categoryOptions('');
+    document.getElementById('productSuppliers').innerHTML = await supplierCheckboxes([]);
   }
 
   function statusBadge(status) {
@@ -35,7 +54,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     const body = document.getElementById('tableBody');
     if (rows.length === 0) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="8">No products match your filters.</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="9">No products match your filters.</td></tr>';
       return;
     }
 
@@ -44,10 +63,12 @@ document.addEventListener('DOMContentLoaded', async function () {
       const rowClass = status === 'out' ? 'row-danger' : status === 'low' ? 'row-warn' : '';
       const expDays = GMS.daysUntil(p.expiry);
       const expiryText = GMS.formatDate(p.expiry) + (expDays !== null && expDays <= 30 ? ' <span class="text-muted">(' + (expDays < 0 ? 'expired' : expDays + 'd left') + ')</span>' : '');
+      const supText = GMS.supplierNames ? GMS.supplierNames(p.supplierIds || []) : '';
       return '<tr class="' + rowClass + '">' +
         '<td class="muted-cell">' + p.id + '</td>' +
         '<td>' + p.name + '</td>' +
         '<td>' + GMS.categoryName(p.categoryId) + '</td>' +
+        '<td>' + supText + '</td>' +
         '<td class="cell-num">' + GMS.formatMoney(p.price) + '</td>' +
         '<td class="cell-num">' + p.stock + '</td>' +
         '<td>' + statusBadge(status) + '</td>' +
@@ -66,6 +87,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     form.reset();
     document.getElementById('productId').value = '';
     document.getElementById('productCategory').innerHTML = await categoryOptions('');
+    document.getElementById('productSuppliers').innerHTML = await supplierCheckboxes([]);
     if ((await GMS.categories.all()).length === 0) {
       GMSApp.showToast('Add a category first before adding products.', true);
       return;
@@ -85,6 +107,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const name = document.getElementById('productName').value;
     const categoryId = document.getElementById('productCategory').value;
     const priceRaw = document.getElementById('productPrice').value;
+    const purchasePriceRaw = document.getElementById('productPurchasePrice').value;
     const stockRaw = document.getElementById('productStock').value;
     const reorderRaw = document.getElementById('productReorder').value;
     const expiry = document.getElementById('productExpiry').value;
@@ -92,18 +115,21 @@ document.addEventListener('DOMContentLoaded', async function () {
     let err = GMS.validate.name(name, 'Product name', 200)
       || (!categoryId ? 'Please choose a category.' : null)
       || GMS.validate.money(priceRaw, 'Selling price')
+      || GMS.validate.money(purchasePriceRaw, 'Purchase price')
       || GMS.validate.qty(stockRaw, 'Stock', 0)
       || (reorderRaw !== '' ? GMS.validate.qty(reorderRaw, 'Reorder level', 0) : null)
       || (expiry ? GMS.validate.date(expiry, 'Expiry date') : null);
     if (err) { GMSApp.showToast(err, true); return; }
 
     const price = parseFloat(priceRaw);
+    const purchasePrice = parseFloat(purchasePriceRaw);
     const stock = parseInt(stockRaw, 10);
     const reorderLevel = reorderRaw === '' ? 5 : parseInt(reorderRaw, 10);
 
     const data = {
-      name: name, categoryId: Number(categoryId), price: price, stock: stock,
-      reorderLevel: isNaN(reorderLevel) ? 5 : reorderLevel, expiry: expiry || ''
+      name: name, categoryId: Number(categoryId), price: price, purchasePrice: purchasePrice, stock: stock,
+      reorderLevel: isNaN(reorderLevel) ? 5 : reorderLevel, expiry: expiry || '',
+      supplierIds: selectedSupplierIds()
     };
 
     try {
@@ -127,6 +153,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     document.getElementById('productName').value = p.name;
     document.getElementById('productCategory').innerHTML = await categoryOptions(p.categoryId);
     document.getElementById('productPrice').value = p.price;
+    document.getElementById('productPurchasePrice').value = (p.purchasePrice !== undefined && p.purchasePrice !== null) ? p.purchasePrice : p.price;
+    document.getElementById('productSuppliers').innerHTML = await supplierCheckboxes(p.supplierIds || (p.supplierId ? [p.supplierId] : []));
     document.getElementById('productStock').value = p.stock;
     document.getElementById('productReorder').value = p.reorderLevel;
     document.getElementById('productExpiry').value = p.expiry || '';

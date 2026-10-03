@@ -1,4 +1,10 @@
 /* Products page rules (base in common.css). */
 /* Products page: product table + stock badges + product modal. */
 
+/* Option B: multi-supplier checkboxes. */
+.checkbox-group { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 6px 0; }
+.checkbox-group label { display: inline-flex; align-items: center; gap: 6px; font-weight: normal; cursor: pointer; }
+.checkbox-group input[type="checkbox"] { width: 16px; height: 16px; }
+.checkbox-group .muted-cell { color: #888; }
+
 /* Add product-specific tweaks below. */

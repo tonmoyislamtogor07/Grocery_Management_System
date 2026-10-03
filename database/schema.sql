@@ -49,9 +49,8 @@ CREATE TABLE `customers` (
 
 CREATE TABLE `products` (
   `product_id` int PRIMARY KEY AUTO_INCREMENT,
-  `product_name` varchar(200) NOT NULL,
+  `product_name` varchar(200) NOT NULL UNIQUE,
   `category_id` int DEFAULT NULL,
-  `supplier_id` int DEFAULT NULL,
   `barcode` varchar(100) DEFAULT NULL UNIQUE,
   `purchase_price` decimal(10,2) NOT NULL DEFAULT 0.00 CHECK (`purchase_price` >= 0),
   `selling_price` decimal(10,2) NOT NULL DEFAULT 0.00 CHECK (`selling_price` >= 0),
@@ -60,8 +59,18 @@ CREATE TABLE `products` (
   `expiry_date` date DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   KEY `idx_products_name` (`product_name`),
-  CONSTRAINT `fk_products_category` FOREIGN KEY (`category_id`) REFERENCES `categories` (`category_id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT `fk_products_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`supplier_id`) ON DELETE SET NULL ON UPDATE CASCADE
+  CONSTRAINT `fk_products_category` FOREIGN KEY (`category_id`) REFERENCES `categories` (`category_id`) ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- Many-to-many: one product can come from multiple suppliers (Option B).
+-- A purchase itself still has ONE supplier; product_suppliers is the
+-- allowed-sources list. Auto-linked on purchase (INSERT IGNORE).
+CREATE TABLE `product_suppliers` (
+  `product_id` int NOT NULL,
+  `supplier_id` int NOT NULL,
+  PRIMARY KEY (`product_id`, `supplier_id`),
+  CONSTRAINT `fk_psup_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_psup_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`supplier_id`) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
 CREATE TABLE `purchases` (

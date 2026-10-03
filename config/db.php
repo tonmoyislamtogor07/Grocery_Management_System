@@ -166,17 +166,47 @@ function map_supplier(array $r): array {
 function map_customer(array $r): array {
     return ['id' => (int)$r['customer_id'], 'name' => $r['customer_name'], 'phone' => $r['phone'] ?? ''];
 }
-function map_product(array $r): array {
+function map_product(array $r, array $supplierIds = []): array {
+    $ids = array_values(array_unique(array_map('intval', $supplierIds)));
     return [
         'id'          => (int)$r['product_id'],
         'name'        => $r['product_name'],
         'categoryId'  => $r['category_id'] !== null ? (int)$r['category_id'] : null,
+        // Option B: many-to-many sources. supplierId = first link (backward compat).
+        'supplierIds' => $ids,
+        'supplierId'  => count($ids) > 0 ? (int)$ids[0] : null,
         'price'       => (float)$r['selling_price'],
         'purchasePrice' => (float)($r['purchase_price'] ?? 0),
         'stock'       => (int)$r['stock_quantity'],
         'reorderLevel'=> (int)$r['minimum_stock'],
         'expiry'      => $r['expiry_date'] ? substr((string)$r['expiry_date'], 0, 10) : '',
     ];
+}
+
+// Allowed suppliers for one product (Option B junction table).
+function product_supplier_ids(PDO $pdo, int $productId): array {
+    try {
+        $st = $pdo->prepare('SELECT supplier_id FROM product_suppliers WHERE product_id = ? ORDER BY supplier_id');
+        $st->execute([$productId]);
+        return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+    } catch (Throwable $e) { return []; }
+}
+
+// Allowed suppliers for many products in one query (avoids N+1 on list).
+function product_suppliers_map(PDO $pdo, array $productIds): array {
+    $map = [];
+    $ids = array_values(array_unique(array_map('intval', $productIds)));
+    if (count($ids) === 0) return $map;
+    try {
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $st = $pdo->prepare("SELECT product_id, supplier_id FROM product_suppliers WHERE product_id IN ($ph) ORDER BY product_id, supplier_id");
+        $st->execute($ids);
+        foreach ($st->fetchAll() as $row) {
+            $pid = (int)$row['product_id'];
+            $map[$pid][] = (int)$row['supplier_id'];
+        }
+    } catch (Throwable $e) {}
+    return $map;
 }
 function map_expense(array $r): array {
     return [

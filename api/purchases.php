@@ -52,10 +52,14 @@ try {
         $st = $pdo->prepare('SELECT 1 FROM suppliers WHERE supplier_id = ?');
         $st->execute([$supplierId]);
         if (!$st->fetch()) { $pdo->rollBack(); fail('Supplier not found.', 422); }
-        $stP = $pdo->prepare('SELECT 1 FROM products WHERE product_id = ?');
+        $stP = $pdo->prepare('SELECT stock_quantity, purchase_price FROM products WHERE product_id = ?');
+        $old = [];
         foreach ($items as $it) {
-            $stP->execute([v_id($it['productId'] ?? 0, 'product')]);
-            if (!$stP->fetch()) { $pdo->rollBack(); fail('Product #' . $it['productId'] . ' does not exist.', 422); }
+            $pid = v_id($it['productId'] ?? 0, 'product');
+            $stP->execute([$pid]);
+            $row = $stP->fetch();
+            if (!$row) { $pdo->rollBack(); fail('Product #' . $it['productId'] . ' does not exist.', 422); }
+            $old[$pid] = ['stock' => (int)$row['stock_quantity'], 'avg' => (float)$row['purchase_price']];
         }
         $total = 0.0;
         // use the validated + normalized values from here on
@@ -77,14 +81,23 @@ try {
         $st->execute([$supplierId, $total, $date]);
         $pid = (int)$pdo->lastInsertId();
         $stD = $pdo->prepare('INSERT INTO purchase_details (purchase_id, product_id, quantity, unit_price, subtotal) VALUES (?, ?, ?, ?, ?)');
-        $stS = $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE product_id = ?');
+        // Weighted-average cost: new_avg = (old_stock*old_avg + qty*price) / (old_stock+qty).
+        // products.purchase_price always holds the current average; sales snapshot it as unit_cost.
+        $stS = $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity + ?, purchase_price = ? WHERE product_id = ?');
         $stL = $pdo->prepare("INSERT INTO stock_logs (product_id, change_type, quantity_changed) VALUES (?, 'purchase', ?)");
+        // Option B: remember this supplier as an allowed source (learn on purchase).
+        $stLink = $pdo->prepare('INSERT IGNORE INTO product_suppliers (product_id, supplier_id) VALUES (?, ?)');
         foreach ($items as $it) {
             $qty = (int)$it['qty'];
             $price = (float)$it['price'];
-            $stD->execute([$pid, (int)$it['productId'], $qty, $price, $qty * $price]);
-            $stS->execute([$qty, (int)$it['productId']]);
-            $stL->execute([(int)$it['productId'], $qty]);
+            $pidInt = (int)$it['productId'];
+            $stD->execute([$pid, $pidInt, $qty, $price, $qty * $price]);
+            $o = $old[$pidInt];
+            $newStock = $o['stock'] + $qty;
+            $newAvg = $newStock > 0 ? round(($o['stock'] * $o['avg'] + $qty * $price) / $newStock, 2) : round($price, 2);
+            $stS->execute([$qty, $newAvg, $pidInt]);
+            $stL->execute([$pidInt, $qty]);
+            $stLink->execute([$pidInt, $supplierId]);
         }
         $pdo->commit();
         send_json(['ok' => true, 'data' => purchase_with_items($pdo, $pid)], 201);

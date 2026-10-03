@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     const body = document.getElementById('tableBody');
     if (rows.length === 0) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="6">No suppliers found. Add a supplier to start recording purchases.</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="7">No suppliers found. Add a supplier to start recording purchases.</td></tr>';
       return;
     }
 
@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         '<td>' + s.name + '</td>' +
         '<td>' + (s.phone || '\u2014') + '</td>' +
         '<td>' + (s.address || '\u2014') + '</td>' +
+        '<td class="cell-num">' + (s.productCount != null ? s.productCount : '\u2014') + '</td>' +
         '<td class="cell-num">' + (s.purchaseCount != null ? s.purchaseCount : '\u2014') + '</td>' +
         '<td class="row-actions">' +
           '<button class="btn btn-ghost btn-sm" onclick="editSupplier(\'' + s.id + '\')">Edit</button>' +
