@@ -33,6 +33,10 @@ try {
         $st = $pdo->prepare('INSERT INTO products (product_name, category_id, selling_price, purchase_price, stock_quantity, minimum_stock, expiry_date) VALUES (?, ?, ?, ?, ?, ?, ?)');
         $st->execute([$name, $categoryId, $price, $purchasePrice, $stock, $reorder, $expiry]);
         $id = (int)$pdo->lastInsertId();
+        if ($stock > 0) {
+            $stL = $pdo->prepare("INSERT INTO stock_logs (product_id, change_type, quantity_changed) VALUES (?, 'opening', ?)");
+            $stL->execute([$id, $stock]);
+        }
         $pdo->commit();
         $st = $pdo->prepare('SELECT * FROM products WHERE product_id = ?');
         $st->execute([$id]);
@@ -60,6 +64,11 @@ try {
         $pdo->beginTransaction();
         $st = $pdo->prepare('UPDATE products SET product_name=?, category_id=?, selling_price=?, purchase_price=?, stock_quantity=?, minimum_stock=?, expiry_date=? WHERE product_id=?');
         $st->execute([$name, $categoryId, $price, $purchasePrice, $stock, $reorder, $expiry, $id]);
+        $diff = $stock - (int)$old['stock_quantity'];
+        if ($diff !== 0) {
+            $stL = $pdo->prepare("INSERT INTO stock_logs (product_id, change_type, quantity_changed) VALUES (?, 'adjust', ?)");
+            $stL->execute([$id, $diff]);
+        }
         $pdo->commit();
         $st = $pdo->prepare('SELECT * FROM products WHERE product_id = ?');
         $st->execute([$id]);

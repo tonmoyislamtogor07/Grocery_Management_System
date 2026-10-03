@@ -76,6 +76,14 @@ try {
             $total += $qty * $price;
         }
         $items = $clean;
+        // merge duplicate product lines so UNIQUE(sale_id, product_id) never breaks
+        $merged = [];
+        foreach ($items as $it) {
+            $pid = (int)$it['productId'];
+            if (!isset($merged[$pid])) $merged[$pid] = $it;
+            else { $merged[$pid]['qty'] += (int)$it['qty']; $merged[$pid]['price'] = (float)$it['price']; }
+        }
+        $items = array_values($merged);
         // Partial payment is allowed: whatever is unpaid stays as due
         // (due = final_amount - cash_received, shown on the cashier board).
         $st = $pdo->prepare('INSERT INTO sales (customer_id, total_amount, discount, final_amount, cash_received, sale_date) VALUES (?, ?, 0, ?, ?, ?)');

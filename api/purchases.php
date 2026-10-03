@@ -64,6 +64,14 @@ try {
             $price = v_money($it['price'], 'Unit price');
             return ['productId' => v_id($it['productId'], 'product'), 'qty' => $qty, 'price' => $price];
         }, $items);
+        // merge duplicate product lines so UNIQUE(purchase_id, product_id) never breaks
+        $merged = [];
+        foreach ($items as $it) {
+            $pid = (int)$it['productId'];
+            if (!isset($merged[$pid])) $merged[$pid] = $it;
+            else { $merged[$pid]['qty'] += (int)$it['qty']; $merged[$pid]['price'] = (float)$it['price']; }
+        }
+        $items = array_values($merged);
         foreach ($items as $it) $total += $it['qty'] * $it['price'];
         $st = $pdo->prepare('INSERT INTO purchases (supplier_id, total_amount, purchase_date) VALUES (?, ?, ?)');
         $st->execute([$supplierId, $total, $date]);
