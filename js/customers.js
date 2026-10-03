@@ -20,15 +20,18 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     body.innerHTML = rows.map(function (c) {
+      // Cashier can add/sell but never delete: hide the Delete button for cashier.
+      const isCashier = (typeof GMS !== 'undefined' && GMS.session.role() === 'cashier');
+      const actions = isCashier
+        ? '<button class="btn btn-ghost btn-sm" onclick="editCustomer(\'' + c.id + '\')">Edit</button>'
+        : '<button class="btn btn-ghost btn-sm" onclick="editCustomer(\'' + c.id + '\')">Edit</button>' +
+          '<button class="btn btn-danger btn-sm" onclick="deleteCustomer(\'' + c.id + '\')">Delete</button>';
       return '<tr>' +
         '<td class="muted-cell">' + c.id + '</td>' +
         '<td>' + c.name + '</td>' +
         '<td>' + (c.phone || '\u2014') + '</td>' +
         '<td class="cell-num">' + (c.purchaseCount != null ? c.purchaseCount : '\u2014') + '</td>' +
-        '<td class="row-actions">' +
-          '<button class="btn btn-ghost btn-sm" onclick="editCustomer(\'' + c.id + '\')">Edit</button>' +
-          '<button class="btn btn-danger btn-sm" onclick="deleteCustomer(\'' + c.id + '\')">Delete</button>' +
-        '</td></tr>';
+        '<td class="row-actions">' + actions + '</td></tr>';
     }).join('');
   }
 
@@ -73,6 +76,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   };
 
   window.deleteCustomer = async function (id) {
+    if (typeof GMS !== 'undefined' && GMS.session.role() === 'cashier') { GMSApp.showToast('Cashier cannot delete customers.', true); return; }
     if (!confirm('Delete this customer? This cannot be undone.')) return;
     try {
       await GMS.customers.remove(Number(id));
