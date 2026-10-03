@@ -5,6 +5,8 @@ require_once __DIR__ . '/../config/db.php';
 $method = $_SERVER['REQUEST_METHOD'];
 try {
     $pdo = db();
+    // Payouts are hidden from cashier: owner/manager only (all methods).
+    require_roles(['owner', 'manager'], 'view expenses');
     if ($method === 'GET') {
         $rows = $pdo->query('SELECT * FROM expenses ORDER BY expense_date DESC, expense_id DESC')->fetchAll();
         send_json(['ok' => true, 'data' => array_map('map_expense', $rows)]);

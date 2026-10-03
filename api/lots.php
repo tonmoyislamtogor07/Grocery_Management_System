@@ -6,6 +6,8 @@ require_once __DIR__ . '/../config/db.php';
 
 try {
     $pdo = db();
+    // Batch costs are hidden from cashier: owner/manager only.
+    require_roles(['owner', 'manager'], 'view batches');
     $pid = v_id($_GET['product_id'] ?? $_GET['productId'] ?? 0, 'product');
     $st = $pdo->prepare('SELECT 1 FROM products WHERE product_id = ?');
     $st->execute([$pid]);

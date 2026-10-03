@@ -150,6 +150,35 @@ function v_id($v, string $field = 'ID'): int {
     return (int)$v;
 }
 
+/* ==========================================================================
+   Role-based access (100% server-side). Login (api/auth.php) stores role_key
+   in the PHP session: owner | manager | cashier.
+   - cashier = counter only: READ products/customers/sales (+suppliers/
+     categories names), CREATE sales + sale_payments, ADD customers.
+     NO PUT/DELETE anywhere, NO inventory/purchase/expense writes,
+     NO purchase-cost, expense or profit reads.
+   - manager/owner: as before (all reads + writes; UI hides a few pages).
+   Frontend ALSO hides cashier buttons, so no 403 toast appears in
+   normal use; store.js only fetches what the role may read.
+   ========================================================================== */
+
+function current_role(): string {
+    if (session_status() === PHP_SESSION_NONE) @session_start();
+    return strtolower((string)($_SESSION['role_key'] ?? ''));
+}
+
+function require_login(): string {
+    $role = current_role();
+    if (empty($_SESSION['username'] ?? '') || $role === '') fail('Please log in first.', 401);
+    return $role;
+}
+
+function require_roles(array $roles, string $action = 'perform this action'): string {
+    $role = require_login();
+    if (!in_array($role, $roles, true)) fail('Your role is not allowed to ' . $action . '.', 403);
+    return $role;
+}
+
 function v_optional_date($v, string $field): ?string {
     $s = clean_text($v);
     if ($s === '') return null;

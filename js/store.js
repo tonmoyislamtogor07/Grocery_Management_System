@@ -34,7 +34,15 @@ const GMS = (function () {
   }
 
   async function refreshAll() {
-    await Promise.all(Object.keys(cache).map(refresh));
+    // Cashier never touches purchase costs / payouts / profit endpoints,
+    // so no 403 toast can appear on cashier pages. (Backend enforces too.)
+    let role = '';
+    try { role = sessionStorage.getItem('gms_role') || ''; } catch (e) {}
+    const all = Object.keys(cache);
+    const list = role === 'cashier'
+      ? all.filter(function (e) { return e !== 'purchases' && e !== 'expenses'; })
+      : all;
+    await Promise.all(list.map(refresh));
   }
 
   const ready = refreshAll();

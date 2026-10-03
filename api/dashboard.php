@@ -6,6 +6,8 @@ require_once __DIR__ . '/../config/db.php';
 
 try {
     $pdo = db();
+    // Profit/cost figures: owner/manager only (cashier has its own counter page).
+    require_roles(['owner', 'manager'], 'view reports');
     $today = date('Y-m-d');
 
     $totalSales     = (float)$pdo->query('SELECT COALESCE(SUM(final_amount),0) FROM sales')->fetchColumn();
