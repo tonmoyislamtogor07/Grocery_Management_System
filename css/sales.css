@@ -26,7 +26,7 @@
 
 /* Line-items table column widths (were inline styles). */
 .invoice-shell .table-wrap table { table-layout: fixed; }
-#lineItemsBody tr > td { padding: 8px 6px; }
+#lineItemsBody tr > td { padding: 8px 6px; vertical-align: top; }
 #lineItemsBody .line-product, #lineItemsBody .line-qty,
 #lineItemsBody .line-price { width: 100%; box-sizing: border-box; }
 /* hide qty spinners (typed entry; frees ~20px so the value stays visible) */

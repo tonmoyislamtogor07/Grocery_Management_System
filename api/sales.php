@@ -25,6 +25,8 @@ function sale_with_items(PDO $pdo, int $sid): ?array {
 
 try {
     $pdo = db();
+    // Billing endpoint: every logged-in role may read + create bills.
+    $role = require_login();
     if ($method === 'GET') {
         if (isset($_GET['id'])) {
             $doc = sale_with_items($pdo, (int)$_GET['id']);

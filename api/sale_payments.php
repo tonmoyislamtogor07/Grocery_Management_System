@@ -10,6 +10,8 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 try {
     $pdo = db();
+    // Due collection happens at the counter: every role may read + record.
+    $role = require_login();
     if ($method === 'GET') {
         $sid = v_id($_GET['sale_id'] ?? $_GET['saleId'] ?? 0, 'sale');
         $st = $pdo->prepare('SELECT payment_id, amount, paid_at FROM sale_payments WHERE sale_id = ? ORDER BY paid_at ASC, payment_id ASC');

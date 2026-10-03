@@ -5,6 +5,9 @@ require_once __DIR__ . '/../config/db.php';
 $method = $_SERVER['REQUEST_METHOD'];
 try {
     $pdo = db();
+    // Cashier: read-only here (no supplier writes).
+    $role = require_login();
+    if (in_array($method, ['POST', 'PUT', 'DELETE'], true)) require_roles(['owner', 'manager'], 'manage suppliers');
     if ($method === 'GET') {
         if (isset($_GET['id'])) {
             $st = $pdo->prepare('SELECT * FROM suppliers WHERE supplier_id = ?');

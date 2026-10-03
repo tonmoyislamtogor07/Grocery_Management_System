@@ -24,6 +24,8 @@ function purchase_with_items(PDO $pdo, int $pid): ?array {
 
 try {
     $pdo = db();
+    // Purchase costs are hidden from cashier: owner/manager only (all methods).
+    require_roles(['owner', 'manager'], 'view purchases');
     if ($method === 'GET') {
         if (isset($_GET['id'])) {
             $doc = purchase_with_items($pdo, v_id($_GET['id'], 'purchase'));

@@ -5,6 +5,9 @@ require_once __DIR__ . '/../config/db.php';
 $method = $_SERVER['REQUEST_METHOD'];
 try {
     $pdo = db();
+    // Cashier may READ + ADD customers (billing need), never edit/delete.
+    $role = require_login();
+    if (in_array($method, ['PUT', 'DELETE'], true)) require_roles(['owner', 'manager'], 'edit customers');
     if ($method === 'GET') {
         if (isset($_GET['id'])) {
             $st = $pdo->prepare('SELECT * FROM customers WHERE customer_id = ?');

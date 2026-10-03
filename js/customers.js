@@ -20,11 +20,10 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     body.innerHTML = rows.map(function (c) {
-      // Cashier can add/sell but never delete: hide the Delete button for cashier.
+      // Cashier is view + add only: no Edit/Delete buttons (backend blocks with 403 too).
       const isCashier = (typeof GMS !== 'undefined' && GMS.session.role() === 'cashier');
-      const actions = isCashier
-        ? '<button class="btn btn-ghost btn-sm" onclick="editCustomer(\'' + c.id + '\')">Edit</button>'
-        : '<button class="btn btn-ghost btn-sm" onclick="editCustomer(\'' + c.id + '\')">Edit</button>' +
+      const actions = isCashier ? '<span class="muted-cell">—</span>' :
+          '<button class="btn btn-ghost btn-sm" onclick="editCustomer(\'' + c.id + '\')">Edit</button>' +
           '<button class="btn btn-danger btn-sm" onclick="deleteCustomer(\'' + c.id + '\')">Delete</button>';
       return '<tr>' +
         '<td class="muted-cell">' + c.id + '</td>' +
@@ -67,6 +66,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   });
 
   window.editCustomer = async function (id) {
+    if (typeof GMS !== 'undefined' && GMS.session.role() === 'cashier') { GMSApp.showToast('Cashier cannot edit customers.', true); return; }
     const c = await GMS.customers.get(Number(id));
     if (!c) return;
     document.getElementById('customerId').value = c.id;

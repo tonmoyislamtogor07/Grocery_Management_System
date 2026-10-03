@@ -6,6 +6,9 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 try {
     $pdo = db();
+    // Cashier: read-only here (no category writes).
+    $role = require_login();
+    if (in_array($method, ['POST', 'PUT', 'DELETE'], true)) require_roles(['owner', 'manager'], 'manage categories');
     if ($method === 'GET') {
         if (isset($_GET['id'])) {
             $st = $pdo->prepare('SELECT * FROM categories WHERE category_id = ?');
