@@ -85,6 +85,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const name = document.getElementById('productName').value;
     const categoryId = document.getElementById('productCategory').value;
     const priceRaw = document.getElementById('productPrice').value;
+    const purchasePriceRaw = document.getElementById('productPurchasePrice').value;
     const stockRaw = document.getElementById('productStock').value;
     const reorderRaw = document.getElementById('productReorder').value;
     const expiry = document.getElementById('productExpiry').value;
@@ -92,17 +93,19 @@ document.addEventListener('DOMContentLoaded', async function () {
     let err = GMS.validate.name(name, 'Product name', 200)
       || (!categoryId ? 'Please choose a category.' : null)
       || GMS.validate.money(priceRaw, 'Selling price')
+      || GMS.validate.money(purchasePriceRaw, 'Purchase price')
       || GMS.validate.qty(stockRaw, 'Stock', 0)
       || (reorderRaw !== '' ? GMS.validate.qty(reorderRaw, 'Reorder level', 0) : null)
       || (expiry ? GMS.validate.date(expiry, 'Expiry date') : null);
     if (err) { GMSApp.showToast(err, true); return; }
 
     const price = parseFloat(priceRaw);
+    const purchasePrice = parseFloat(purchasePriceRaw);
     const stock = parseInt(stockRaw, 10);
     const reorderLevel = reorderRaw === '' ? 5 : parseInt(reorderRaw, 10);
 
     const data = {
-      name: name, categoryId: Number(categoryId), price: price, stock: stock,
+      name: name, categoryId: Number(categoryId), price: price, purchasePrice: purchasePrice, stock: stock,
       reorderLevel: isNaN(reorderLevel) ? 5 : reorderLevel, expiry: expiry || ''
     };
 
@@ -127,6 +130,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     document.getElementById('productName').value = p.name;
     document.getElementById('productCategory').innerHTML = await categoryOptions(p.categoryId);
     document.getElementById('productPrice').value = p.price;
+    document.getElementById('productPurchasePrice').value = (p.purchasePrice !== undefined && p.purchasePrice !== null) ? p.purchasePrice : p.price;
     document.getElementById('productStock').value = p.stock;
     document.getElementById('productReorder').value = p.reorderLevel;
     document.getElementById('productExpiry').value = p.expiry || '';
