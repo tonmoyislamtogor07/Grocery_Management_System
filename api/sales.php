@@ -56,11 +56,8 @@ try {
             if (!$st->fetch()) { $pdo->rollBack(); fail('Customer not found.', 422); }
         }
         $total = 0.0;
-        // validate stock first + snapshot each product's current purchase
-        // price as the line's unit_cost (COGS history must survive later
-        // cost changes)
-        $stStock = $pdo->prepare('SELECT stock_quantity, purchase_price FROM products WHERE product_id = ?');
-        $costs = [];
+        // validate stock first (lots are consumed oldest-expiry-first at insert time)
+        $stStock = $pdo->prepare('SELECT stock_quantity FROM products WHERE product_id = ?');
         $clean = [];
         foreach ($items as $it) {
             if (!is_array($it)) { $pdo->rollBack(); fail('Invalid item format.', 422); }
@@ -71,7 +68,6 @@ try {
             $row = $stStock->fetch();
             if (!$row) { $pdo->rollBack(); fail('Product #' . $pid . ' does not exist.', 422); }
             if ($qty > (int)$row['stock_quantity']) { $pdo->rollBack(); fail('Not enough stock for product #' . $pid . ' (have ' . $row['stock_quantity'] . ').', 409); }
-            $costs[$pid] = (float)$row['purchase_price'];
             $clean[] = ['productId' => $pid, 'qty' => $qty, 'price' => $price];
             $total += $qty * $price;
         }
@@ -90,15 +86,27 @@ try {
         $st->execute([$customerId, $total, $total, $cash, $date]);
         $sid = (int)$pdo->lastInsertId();
         $stD = $pdo->prepare('INSERT INTO sale_details (sale_id, product_id, quantity, unit_price, subtotal, unit_cost) VALUES (?, ?, ?, ?, ?, ?)');
+        $stA = $pdo->prepare('INSERT INTO sale_lots (sale_detail_id, lot_id, quantity) VALUES (?, ?, ?)');
         $stS = $pdo->prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE product_id = ?');
         $stL = $pdo->prepare("INSERT INTO stock_logs (product_id, change_type, quantity_changed) VALUES (?, 'sale', ?)");
+        $touched = [];
         foreach ($items as $it) {
             $qty = (int)$it['qty'];
             $price = (float)$it['price'];
-            $stD->execute([$sid, (int)$it['productId'], $qty, $price, $qty * $price, $costs[(int)$it['productId']]]);
-            $stS->execute([$qty, (int)$it['productId']]);
-            $stL->execute([(int)$it['productId'], -$qty]);
+            $pidInt = (int)$it['productId'];
+            // Real COGS: consume oldest-expiry batches first; the line cost is the
+            // weighted average of the batches actually used (exact, survives later
+            // cost changes via the snapshot + sale_lots audit rows).
+            $used = consume_fifo($pdo, $pidInt, $qty);
+            $lineCost = $qty > 0 ? round($used['cost'] / $qty, 2) : 0.0;
+            $stD->execute([$sid, $pidInt, $qty, $price, $qty * $price, $lineCost]);
+            $did = (int)$pdo->lastInsertId();
+            foreach ($used['alloc'] as $lotId => $take) $stA->execute([$did, $lotId, $take]);
+            $stS->execute([$qty, $pidInt]);
+            $stL->execute([$pidInt, -$qty]);
+            $touched[$pidInt] = true;
         }
+        foreach (array_keys($touched) as $pidInt) refresh_product_expiry($pdo, $pidInt);
         $pdo->commit();
         send_json(['ok' => true, 'data' => sale_with_items($pdo, $sid)], 201);
     }

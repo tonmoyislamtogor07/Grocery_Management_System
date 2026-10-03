@@ -88,10 +88,33 @@ CREATE TABLE `purchase_details` (
   `quantity` int NOT NULL CHECK (`quantity` > 0),
   `unit_price` decimal(10,2) NOT NULL DEFAULT 0.00 CHECK (`unit_price` >= 0),
   `subtotal` decimal(12,2) NOT NULL DEFAULT 0.00 CHECK (`subtotal` >= 0),
-  UNIQUE KEY `uq_purchase_product` (`purchase_id`, `product_id`),
+  `expiry_date` date DEFAULT NULL,
+  KEY `idx_pdetails_purchase` (`purchase_id`),
   CONSTRAINT `fk_pdetails_purchase` FOREIGN KEY (`purchase_id`) REFERENCES `purchases` (`purchase_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_pdetails_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE RESTRICT ON UPDATE CASCADE
 );
+
+-- Real batch inventory (FIFO/FEFO): every inbound movement is a lot with its
+-- own supplier, cost and expiry. products.stock_quantity = SUM(lots.qty_left).
+-- One purchase line = one lot, so the same product may repeat in one bill
+-- (different expiry) — hence no UNIQUE(purchase_id, product_id) here.
+CREATE TABLE `stock_lots` (
+  `lot_id` int PRIMARY KEY AUTO_INCREMENT,
+  `product_id` int NOT NULL,
+  `purchase_id` int DEFAULT NULL,
+  `supplier_id` int DEFAULT NULL,
+  `qty_bought` int NOT NULL CHECK (`qty_bought` > 0),
+  `qty_left` int NOT NULL CHECK (`qty_left` >= 0),
+  `unit_cost` decimal(10,2) NOT NULL CHECK (`unit_cost` >= 0),
+  `expiry_date` date DEFAULT NULL,
+  `received_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_lots_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_lots_purchase` FOREIGN KEY (`purchase_id`) REFERENCES `purchases` (`purchase_id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_lots_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `suppliers` (`supplier_id`) ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+-- Which lots were consumed by each sale line (audit + exact COGS).
+-- (Created after sale_details below, which it references.)
 
 CREATE TABLE `sales` (
   `sale_id` int PRIMARY KEY AUTO_INCREMENT,
@@ -115,6 +138,26 @@ CREATE TABLE `sale_details` (
   UNIQUE KEY `uq_sale_product` (`sale_id`, `product_id`),
   CONSTRAINT `fk_sdetails_sale` FOREIGN KEY (`sale_id`) REFERENCES `sales` (`sale_id`) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT `fk_sdetails_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`product_id`) ON DELETE RESTRICT ON UPDATE CASCADE
+);
+
+-- Due collections: every time a customer pays part/all of a due bill.
+-- sales.cash_received always = SUM(payments) + initial cash (kept in sync).
+CREATE TABLE `sale_payments` (
+  `payment_id` int PRIMARY KEY AUTO_INCREMENT,
+  `sale_id` int NOT NULL,
+  `amount` decimal(12,2) NOT NULL CHECK (`amount` > 0),
+  `paid_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_spay_sale` FOREIGN KEY (`sale_id`) REFERENCES `sales` (`sale_id`) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- Which lots were consumed by each sale line (audit + exact COGS).
+CREATE TABLE `sale_lots` (
+  `sale_detail_id` int NOT NULL,
+  `lot_id` int NOT NULL,
+  `quantity` int NOT NULL CHECK (`quantity` > 0),
+  PRIMARY KEY (`sale_detail_id`, `lot_id`),
+  CONSTRAINT `fk_sl_sdetail` FOREIGN KEY (`sale_detail_id`) REFERENCES `sale_details` (`sale_detail_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_sl_lot` FOREIGN KEY (`lot_id`) REFERENCES `stock_lots` (`lot_id`) ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 CREATE TABLE `expenses` (

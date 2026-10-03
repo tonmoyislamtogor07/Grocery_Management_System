@@ -15,16 +15,67 @@ document.addEventListener('DOMContentLoaded', async function () {
     }).join('');
   }
 
-  // Option B: multiple suppliers per product (checkbox list, optional).
-  async function supplierCheckboxes(selectedIds) {
+  function escHtml(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // Option B: multiple suppliers per product — compact searchable dropdown
+  // (button + panel with filter + checkboxes). Same .supplier-check class,
+  // so selectedSupplierIds() keeps working unchanged.
+  async function renderSupplierMsel(selectedIds) {
+    const box = document.getElementById('productSuppliers');
     const sups = await GMS.suppliers.all();
     const sel = (selectedIds || []).map(Number);
-    if (sups.length === 0) return '<span class="muted-cell">No suppliers yet — add one first.</span>';
-    return sups.map(function (s) {
-      const checked = sel.indexOf(Number(s.id)) !== -1 ? ' checked' : '';
-      return '<label><input type="checkbox" class="supplier-check" value="' + s.id + '"' + checked + '> ' + s.name + '</label>';
-    }).join('');
+    if (sups.length === 0) {
+      box.innerHTML = '<span class="muted-cell">No suppliers yet — add one first.</span>';
+      return;
+    }
+    box.innerHTML =
+      '<div class="msel">' +
+        '<button type="button" class="msel-btn" id="supplierMselBtn"><span id="supplierMselLabel">Select suppliers...</span><span class="msel-caret">▾</span></button>' +
+        '<div class="msel-panel" id="supplierMselPanel" hidden>' +
+          '<input type="text" id="supplierMselSearch" placeholder="Search suppliers..." autocomplete="off">' +
+          '<div class="msel-list" id="supplierMselList">' +
+            sups.map(function (s) {
+              const checked = sel.indexOf(Number(s.id)) !== -1 ? ' checked' : '';
+              return '<label class="msel-item" data-name="' + escHtml(String(s.name).toLowerCase()) + '"><input type="checkbox" class="supplier-check" value="' + s.id + '"' + checked + '> <span>' + escHtml(s.name) + '</span></label>';
+            }).join('') +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    const btn = document.getElementById('supplierMselBtn');
+    const panel = document.getElementById('supplierMselPanel');
+    const search = document.getElementById('supplierMselSearch');
+    const label = document.getElementById('supplierMselLabel');
+    const list = document.getElementById('supplierMselList');
+    const refreshLabel = function () {
+      const names = [];
+      list.querySelectorAll('.supplier-check:checked').forEach(function (el) {
+        const item = el.closest('.msel-item');
+        names.push(item ? item.querySelector('span').textContent : ('#' + el.value));
+      });
+      label.textContent = names.length === 0 ? 'Select suppliers...' : names.length + ' selected (' + names.slice(0, 2).join(', ') + (names.length > 2 ? ', …' : '') + ')';
+    };
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) search.focus();
+    });
+    panel.addEventListener('click', function (e) { e.stopPropagation(); });
+    search.addEventListener('input', function () {
+      const term = search.value.trim().toLowerCase();
+      list.querySelectorAll('.msel-item').forEach(function (item) {
+        item.style.display = (!term || item.getAttribute('data-name').indexOf(term) !== -1) ? '' : 'none';
+      });
+    });
+    list.addEventListener('change', refreshLabel);
+    refreshLabel();
   }
+
+  document.addEventListener('click', function () {
+    const panel = document.getElementById('supplierMselPanel');
+    if (panel && !panel.hidden) panel.hidden = true;
+  });
 
   function selectedSupplierIds() {
     return Array.prototype.map.call(
@@ -36,7 +87,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   async function populateFilters() {
     document.getElementById('categoryFilter').insertAdjacentHTML('beforeend', await categoryOptions(''));
     document.getElementById('productCategory').innerHTML = await categoryOptions('');
-    document.getElementById('productSuppliers').innerHTML = await supplierCheckboxes([]);
+    await renderSupplierMsel([]);
   }
 
   function statusBadge(status) {
@@ -74,6 +125,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         '<td>' + statusBadge(status) + '</td>' +
         '<td>' + expiryText + '</td>' +
         '<td class="row-actions">' +
+          '<button class="btn btn-ghost btn-sm" onclick="viewLots(\'' + p.id + '\')">Lots</button>' +
           '<button class="btn btn-ghost btn-sm" onclick="editProduct(\'' + p.id + '\')">Edit</button>' +
           '<button class="btn btn-danger btn-sm" onclick="deleteProduct(\'' + p.id + '\')">Delete</button>' +
         '</td></tr>';
@@ -87,7 +139,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     form.reset();
     document.getElementById('productId').value = '';
     document.getElementById('productCategory').innerHTML = await categoryOptions('');
-    document.getElementById('productSuppliers').innerHTML = await supplierCheckboxes([]);
+    await renderSupplierMsel([]);
     if ((await GMS.categories.all()).length === 0) {
       GMSApp.showToast('Add a category first before adding products.', true);
       return;
@@ -154,7 +206,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     document.getElementById('productCategory').innerHTML = await categoryOptions(p.categoryId);
     document.getElementById('productPrice').value = p.price;
     document.getElementById('productPurchasePrice').value = (p.purchasePrice !== undefined && p.purchasePrice !== null) ? p.purchasePrice : p.price;
-    document.getElementById('productSuppliers').innerHTML = await supplierCheckboxes(p.supplierIds || (p.supplierId ? [p.supplierId] : []));
+    await renderSupplierMsel(p.supplierIds || (p.supplierId ? [p.supplierId] : []));
     document.getElementById('productStock').value = p.stock;
     document.getElementById('productReorder').value = p.reorderLevel;
     document.getElementById('productExpiry').value = p.expiry || '';
@@ -166,6 +218,23 @@ document.addEventListener('DOMContentLoaded', async function () {
       await GMS.products.remove(Number(id));
       GMSApp.showToast('Product deleted.');
       render();
+    } catch (err) { GMSApp.showToast(err.message, true); }
+  };
+
+  // Batch view: every inbound lot with supplier, cost, expiry and stock left.
+  window.viewLots = async function (id) {
+    try {
+      const res = await fetch('api/lots.php?product_id=' + encodeURIComponent(id), { credentials: 'same-origin' });
+      const body = await res.json();
+      if (!res.ok || !body || body.ok === false) throw new Error((body && body.error) || 'Could not load batches.');
+      const lots = body.data || [];
+      if (lots.length === 0) { alert('No batches in stock for this product.'); return; }
+      const lines = lots.map(function (l, i) {
+        return (i + 1) + '. ' + l.supplier + ' | bought ' + l.bought + ', left ' + l.left +
+          ' @ ' + GMS.formatMoney(l.cost) + (l.expiry ? ' | exp ' + GMS.formatDate(l.expiry) : ' | no expiry') +
+          ' | received ' + GMS.formatDate(l.received);
+      }).join('\n');
+      alert('Batches (oldest-expiry first):\n\n' + lines);
     } catch (err) { GMSApp.showToast(err.message, true); }
   };
 

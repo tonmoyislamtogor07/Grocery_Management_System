@@ -2,12 +2,25 @@
 /* Purchases page: GRN table + purchase form + line-items table. */
 
 /* Wide modal for the GRN form (was inline style). */
-.modal--wide { max-width: 680px; }
+.modal--wide { max-width: 940px; }
+.modal--wide .table-wrap table { table-layout: fixed; }
+
+/* Line-items table: fixed layout so Qty/price/expiry never squeeze,
+   whatever the product-name length or window size. */
+#lineItemsBody tr > td { padding: 8px 6px; }
+#lineItemsBody .line-product, #lineItemsBody .line-qty,
+#lineItemsBody .line-price, #lineItemsBody .line-expiry { width: 100%; box-sizing: border-box; }
+/* hide qty spinners (typed entry; frees ~20px so the value stays visible) */
+#lineItemsBody .line-qty::-webkit-outer-spin-button,
+#lineItemsBody .line-qty::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+#lineItemsBody .line-qty { -moz-appearance: textfield; appearance: textfield; }
 
 /* Line-items table column widths (were inline styles). */
-.th-qty { width: 90px; }
-.th-price { width: 130px; }
-.th-total { width: 110px; }
+.th-qty { width: 78px; }
+.th-price { width: 112px; }
+.th-total { width: 104px; }
+.th-expiry { width: 150px; }
+.th-action { width: 48px; }
 
 /* Spacing for the "+ Add item" button (was inline style). */
 .add-line-btn { margin-top: 8px; }
@@ -16,3 +29,7 @@
 .purchase-foot { margin-top: 6px; }
 .purchase-hint { font-size: 12.5px; }
 .purchase-total { font-family: var(--font-display); font-size: 17px; color: var(--green-900); }
+
+/* Searchable product picker (datalist input replaces the long dropdown). */
+.line-product { width: 100%; box-sizing: border-box; }
+.line-hint { font-size: 11.5px; margin-top: 2px; min-height: 14px; }

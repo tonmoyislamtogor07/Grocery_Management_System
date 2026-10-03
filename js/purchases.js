@@ -13,14 +13,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     return all.map(function (s) { return '<option value="' + s.id + '">' + s.name + '</option>'; }).join('');
   }
 
-  async function productOptions(selectedId) {
-    const all = await GMS.products.all();
-    return all.map(function (p) {
-      const cost = (p.purchasePrice !== undefined && p.purchasePrice !== null) ? p.purchasePrice : p.price;
-      return '<option value="' + p.id + '" data-price="' + cost + '"' + (String(p.id) === String(selectedId) ? ' selected' : '') + '>' + p.name + '</option>';
-    }).join('');
-  }
-
   async function render() {
     const term = searchTerm.toLowerCase();
     const all = await GMS.purchases.all();
@@ -46,27 +38,68 @@ document.addEventListener('DOMContentLoaded', async function () {
     }).join('');
   }
 
-  async function addLineRow(productId, qty, price) {
+  function escAttr(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // Searchable product picker (native datalist): type a few letters to
+  // filter, even with 1000+ products. Names are UNIQUE, so name => product.
+  async function productDatalist() {
+    let dl = document.getElementById('purchaseProductList');
+    if (!dl) {
+      dl = document.createElement('datalist');
+      dl.id = 'purchaseProductList';
+      document.body.appendChild(dl);
+    }
+    const all = await GMS.products.all();
+    dl.innerHTML = all.map(function (p) {
+      return '<option value="' + escAttr(p.name) + '"></option>';
+    }).join('');
+    return all;
+  }
+
+  function findProductByName(all, name) {
+    const s = String(name || '').trim().toLowerCase();
+    if (!s) return null;
+    return all.find(function (p) { return String(p.name).toLowerCase() === s; }) || null;
+  }
+
+  async function addLineRow(productId, qty, price, expiry) {
+    const all = await productDatalist();
     lineCounter++;
     const rowId = 'line' + lineCounter;
     const row = document.createElement('tr');
     row.id = rowId;
+    const preset = productId ? (all.find(function (p) { return String(p.id) === String(productId); }) || null) : null;
     row.innerHTML =
-      '<td><select class="line-product">' + await productOptions(productId) + '</select></td>' +
+      '<td><input class="line-product" list="purchaseProductList" placeholder="Type to search..." autocomplete="off" value="' + escAttr(preset ? preset.name : '') + '">' +
+      '<div class="line-hint text-muted"></div></td>' +
       '<td><input type="number" class="line-qty" min="1" step="1" value="' + (qty || 1) + '"></td>' +
       '<td><input type="number" class="line-price" min="0" step="0.01" value="' + (price != null ? price : '') + '"></td>' +
+      '<td><input type="date" class="line-expiry" value="' + (expiry || '') + '" title="Batch expiry (optional)"></td>' +
       '<td class="cell-num line-total">৳0.00</td>' +
       '<td><button type="button" class="btn btn-danger btn-sm" onclick="document.getElementById(\'' + rowId + '\').remove(); recalcTotal();">&times;</button></td>';
     lineItemsBody.appendChild(row);
 
-    const select = row.querySelector('.line-product');
+    const input = row.querySelector('.line-product');
+    const hint = row.querySelector('.line-hint');
     const priceInput = row.querySelector('.line-price');
-    if (!price && select.options.length) {
-      priceInput.value = select.options[select.selectedIndex] ? (select.options[select.selectedIndex].dataset.price || 0) : 0;
+    if (preset) {
+      row.dataset.productId = preset.id;
+      hint.textContent = 'Cost ' + GMS.formatMoney(preset.purchasePrice) + ' | stock ' + preset.stock;
+      if (price == null) priceInput.value = preset.purchasePrice;
     }
-    select.addEventListener('change', function () {
-      const opt = select.options[select.selectedIndex];
-      priceInput.value = opt ? (opt.dataset.price || 0) : 0;
+    input.addEventListener('input', async function () {
+      const list = await GMS.products.all();
+      const p = findProductByName(list, input.value);
+      if (p) {
+        row.dataset.productId = p.id;
+        hint.textContent = 'Cost ' + GMS.formatMoney(p.purchasePrice) + ' | stock ' + p.stock;
+        priceInput.value = p.purchasePrice;
+      } else {
+        delete row.dataset.productId;
+        hint.textContent = input.value ? 'Pick a product from the list.' : '';
+      }
       recalcTotal();
     });
     row.querySelector('.line-qty').addEventListener('input', recalcTotal);
@@ -113,15 +146,17 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (err) { GMSApp.showToast(err, true); return; }
 
     const items = [];
-    lineItemsBody.querySelectorAll('tr').forEach(function (row) {
+    lineItemsBody.querySelectorAll('tr').forEach(function (row, idx) {
       if (err) return;
-      const productId = Number(row.querySelector('.line-product').value);
+      const productId = Number(row.dataset.productId || 0);
       const qtyRaw = row.querySelector('.line-qty').value;
       const priceRaw = row.querySelector('.line-price').value;
-      err = (!productId ? 'Every row needs a product.' : null)
+      const expiryRaw = row.querySelector('.line-expiry') ? row.querySelector('.line-expiry').value : '';
+      err = (!productId ? 'Row ' + (idx + 1) + ': pick a product from the list.' : null)
         || GMS.validate.qty(qtyRaw, 'Quantity')
-        || GMS.validate.money(priceRaw, 'Unit price');
-      if (!err) items.push({ productId: productId, qty: parseInt(qtyRaw, 10), price: parseFloat(priceRaw) });
+        || GMS.validate.money(priceRaw, 'Unit price')
+        || (expiryRaw ? GMS.validate.date(expiryRaw, 'Expiry date') : null);
+      if (!err) items.push({ productId: productId, qty: parseInt(qtyRaw, 10), price: parseFloat(priceRaw), expiry: expiryRaw || null });
     });
 
     if (err || items.length === 0) { GMSApp.showToast(err || 'Add at least one item.', true); return; }
@@ -142,7 +177,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const prodList = await GMS.products.all();
     const lines = p.items.map(function (it) {
       const prod = prodList.find(function (x) { return String(x.id) === String(it.productId); });
-      return '- ' + (prod ? prod.name : it.productId) + '  x' + it.qty + '  @ ' + GMS.formatMoney(it.price);
+      return '- ' + (prod ? prod.name : it.productId) + '  x' + it.qty + '  @ ' + GMS.formatMoney(it.price) + (it.expiry ? '  (exp ' + GMS.formatDate(it.expiry) + ')' : '');
     }).join('\n');
     alert('Purchase ' + p.id + '\nSupplier: ' + GMS.supplierName(p.supplierId) + '\nDate: ' + GMS.formatDate(p.date) + '\n\n' + lines + '\n\nTotal: ' + GMS.formatMoney(GMS.docTotal(p)));
   };

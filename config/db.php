@@ -208,6 +208,48 @@ function product_suppliers_map(PDO $pdo, array $productIds): array {
     } catch (Throwable $e) {}
     return $map;
 }
+
+/* ==========================================================================
+   Real batch inventory (FIFO/FEFO lots). Callers must already hold a
+   transaction; rows are locked with FOR UPDATE.
+   - FEFO order: earliest expiry first, no-expiry last, then oldest lot.
+   - Returns ['alloc' => [lot_id => qty, ...], 'cost' => total lot cost].
+   - Fails 409 when the lots hold less than requested (data drift guard).
+   ========================================================================== */
+
+function consume_fifo(PDO $pdo, int $productId, int $qty): array {
+    $st = $pdo->prepare(
+        'SELECT lot_id, qty_left, unit_cost FROM stock_lots
+         WHERE product_id = ? AND qty_left > 0
+         ORDER BY (expiry_date IS NULL), expiry_date ASC, lot_id ASC FOR UPDATE'
+    );
+    $st->execute([$productId]);
+    $lots = $st->fetchAll();
+    $need = $qty;
+    $alloc = [];
+    $cost = 0.0;
+    $stU = $pdo->prepare('UPDATE stock_lots SET qty_left = qty_left - ? WHERE lot_id = ?');
+    foreach ($lots as $lot) {
+        if ($need <= 0) break;
+        $take = min($need, (int)$lot['qty_left']);
+        $stU->execute([$take, (int)$lot['lot_id']]);
+        $alloc[(int)$lot['lot_id']] = $take;
+        $cost += $take * (float)$lot['unit_cost'];
+        $need -= $take;
+    }
+    if ($need > 0) fail('Not enough batch stock for product #' . $productId . ' (lots hold less than requested).', 409);
+    return ['alloc' => $alloc, 'cost' => round($cost, 2)];
+}
+
+// Keep products.expiry_date = earliest non-empty lot expiry (drives the
+// dashboard watch + product badges). Untouched when no dated lot exists.
+function refresh_product_expiry(PDO $pdo, int $productId): void {
+    $n = (int)$pdo->query('SELECT COUNT(*) FROM stock_lots WHERE product_id = ' . $productId . ' AND qty_left > 0')->fetchColumn();
+    if ($n === 0) return;
+    $min = $pdo->query('SELECT MIN(expiry_date) FROM stock_lots WHERE product_id = ' . $productId . ' AND qty_left > 0 AND expiry_date IS NOT NULL')->fetchColumn();
+    if ($min) $pdo->prepare('UPDATE products SET expiry_date = ? WHERE product_id = ?')->execute([$min, $productId]);
+    else $pdo->prepare('UPDATE products SET expiry_date = NULL WHERE product_id = ?')->execute([$productId]);
+}
 function map_expense(array $r): array {
     return [
         'id' => (int)$r['expense_id'], 'category' => $r['expense_type'] ?? 'General',
