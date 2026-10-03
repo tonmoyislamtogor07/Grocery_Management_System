@@ -25,9 +25,18 @@
 .receipt-actions { margin-top: 12px; display: flex; justify-content: flex-end; }
 
 /* Line-items table column widths (were inline styles). */
-.th-qty { width: 90px; }
-.th-price { width: 120px; }
-.th-total { width: 110px; }
+.invoice-shell .table-wrap table { table-layout: fixed; }
+#lineItemsBody tr > td { padding: 8px 6px; }
+#lineItemsBody .line-product, #lineItemsBody .line-qty,
+#lineItemsBody .line-price { width: 100%; box-sizing: border-box; }
+/* hide qty spinners (typed entry; frees ~20px so the value stays visible) */
+#lineItemsBody .line-qty::-webkit-outer-spin-button,
+#lineItemsBody .line-qty::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+#lineItemsBody .line-qty { -moz-appearance: textfield; appearance: textfield; }
+.th-qty { width: 78px; }
+.th-price { width: 112px; }
+.th-total { width: 104px; }
+.th-action { width: 48px; }
 
 /* Spacing for the "+ Add item" button (was inline style). */
 .add-line-btn { margin-top: 8px; }
@@ -39,6 +48,10 @@
 
 /* Sales history panel spacing (was inline style). */
 .sales-history { margin-top: 22px; }
+
+/* Searchable product picker (datalist input replaces the long dropdown). */
+.line-product { width: 100%; box-sizing: border-box; }
+.line-hint { font-size: 11.5px; margin-top: 2px; min-height: 14px; }
 
 /* Print: only the cash memo receipt. */
 @media print {

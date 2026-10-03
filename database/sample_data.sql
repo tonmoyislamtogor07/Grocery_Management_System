@@ -93,3 +93,14 @@ INSERT INTO `stock_logs` (`product_id`, `change_type`, `quantity_changed`) VALUE
 (4, 'sale', -2),
 (7, 'sale', -2),
 (6, 'sale', -4);
+
+-- Seed lots mirror the current stock (one lot per stocked product).
+-- received_at predates real bills so FEFO/FIFO order stays sensible.
+INSERT INTO `stock_lots` (`product_id`, `purchase_id`, `supplier_id`, `qty_bought`, `qty_left`, `unit_cost`, `expiry_date`, `received_at`) VALUES
+(1, NULL, 1, 14, 14, 1750.00, '2027-01-15', '2026-08-01 09:00:00'),
+(2, NULL, 1, 3, 3, 880.00, '2027-06-01', '2026-08-01 09:00:00'),
+(3, NULL, 3, 120, 120, 12.00, '2026-09-20', '2026-08-01 09:00:00'),
+(4, NULL, 2, 26, 26, 85.00, '2026-09-10', '2026-08-01 09:00:00'),
+(5, NULL, 3, 60, 60, 38.00, '2028-01-01', '2026-08-01 09:00:00'),
+(6, NULL, 1, 4, 4, 1550.00, '2027-02-10', '2026-08-01 09:00:00'),
+(7, NULL, 3, 72, 72, 32.00, '2028-05-01', '2026-08-01 09:00:00');

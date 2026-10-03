@@ -12,12 +12,30 @@ document.addEventListener('DOMContentLoaded', async function () {
     return all.map(function (c) { return '<option value="' + c.id + '">' + c.name + '</option>'; }).join('');
   }
 
-  async function productOptions(selectedId) {
+  function escAttr(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // Searchable product picker (native datalist): type a few letters to
+  // filter, even with 1000+ products. Names are UNIQUE, so name => product.
+  async function productDatalist() {
+    let dl = document.getElementById('saleProductList');
+    if (!dl) {
+      dl = document.createElement('datalist');
+      dl.id = 'saleProductList';
+      document.body.appendChild(dl);
+    }
     const all = await GMS.products.all();
-    return all.map(function (p) {
-      const disabled = p.stock <= 0 && String(p.id) !== String(selectedId) ? ' disabled' : '';
-      return '<option value="' + p.id + '" data-price="' + p.price + '" data-stock="' + p.stock + '"' + (String(p.id) === String(selectedId) ? ' selected' : '') + disabled + '>' + p.name + (p.stock <= 0 ? ' (out of stock)' : '') + '</option>';
+    dl.innerHTML = all.map(function (p) {
+      return '<option value="' + escAttr(p.name) + '"></option>';
     }).join('');
+    return all;
+  }
+
+  function findProductByName(all, name) {
+    const s = String(name || '').trim().toLowerCase();
+    if (!s) return null;
+    return all.find(function (p) { return String(p.name).toLowerCase() === s; }) || null;
   }
 
   async function productById(id) {
@@ -27,26 +45,34 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   async function addLineRow() {
     if ((await GMS.products.all()).length === 0) { GMSApp.showToast('Add products before creating a sale.', true); return; }
+    await productDatalist();
     lineCounter++;
     const rowId = 'sline' + lineCounter;
     const row = document.createElement('tr');
     row.id = rowId;
     row.innerHTML =
-      '<td><select class="line-product">' + await productOptions() + '</select></td>' +
+      '<td><input class="line-product" list="saleProductList" placeholder="Type to search..." autocomplete="off">' +
+      '<div class="line-hint text-muted"></div></td>' +
       '<td><input type="number" class="line-qty" min="1" step="1" value="1"></td>' +
       '<td><input type="number" class="line-price" min="0" step="0.01"></td>' +
       '<td class="cell-num line-total">৳0.00</td>' +
       '<td><button type="button" class="btn btn-danger btn-sm" onclick="document.getElementById(\'' + rowId + '\').remove(); recalc();">&times;</button></td>';
     lineItemsBody.appendChild(row);
 
-    const select = row.querySelector('.line-product');
+    const input = row.querySelector('.line-product');
+    const hint = row.querySelector('.line-hint');
     const priceInput = row.querySelector('.line-price');
-    const opt = select.options[select.selectedIndex];
-    priceInput.value = opt ? (opt.dataset.price || 0) : 0;
-
-    select.addEventListener('change', function () {
-      const o = select.options[select.selectedIndex];
-      priceInput.value = o ? (o.dataset.price || 0) : 0;
+    input.addEventListener('input', async function () {
+      const list = await GMS.products.all();
+      const p = findProductByName(list, input.value);
+      if (p) {
+        row.dataset.productId = p.id;
+        hint.textContent = GMS.formatMoney(p.price) + ' | stock ' + p.stock + (p.stock <= 0 ? ' (out of stock)' : '');
+        priceInput.value = p.price;
+      } else {
+        delete row.dataset.productId;
+        hint.textContent = input.value ? 'Pick a product from the list.' : '';
+      }
       recalc();
     });
     row.querySelector('.line-qty').addEventListener('input', recalc);
@@ -84,8 +110,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const prodList = await GMS.products.all();
     const lines = [];
     lineItemsBody.querySelectorAll('tr').forEach(function (row) {
-      const select = row.querySelector('.line-product');
-      const productId = Number(select.value);
+      const productId = Number(row.dataset.productId || 0);
       const qty = parseFloat(row.querySelector('.line-qty').value) || 0;
       const price = parseFloat(row.querySelector('.line-price').value) || 0;
       const product = prodList.find(function (p) { return Number(p.id) === productId; }) || null;
@@ -212,6 +237,7 @@ document.addEventListener('DOMContentLoaded', async function () {
       const dueCell = due > 0
         ? '<span class="badge badge-out">' + GMS.formatMoney(due) + '</span>'
         : '<span class="badge badge-ok">Paid</span>';
+      const collectBtn = due > 0 ? '<button class="btn btn-primary btn-sm" onclick="openCollect(\'' + s.id + '\')">Collect</button>' : '';
       return '<tr>' +
         '<td class="muted-cell">' + s.id + '</td>' +
         '<td>' + GMS.customerName(s.customerId) + '</td>' +
@@ -219,10 +245,65 @@ document.addEventListener('DOMContentLoaded', async function () {
         '<td class="cell-num">' + s.items.length + '</td>' +
         '<td class="cell-num">' + GMS.formatMoney(total) + '</td>' +
         '<td>' + dueCell + '</td>' +
-        '<td class="row-actions"><button class="btn btn-ghost btn-sm" onclick="viewSale(\'' + s.id + '\')">View</button></td>' +
+        '<td class="row-actions">' + collectBtn + '<button class="btn btn-ghost btn-sm" onclick="viewSale(\'' + s.id + '\')">View</button></td>' +
         '</tr>';
     }).join('');
   }
+
+  // ---- Due collection ----
+  const collectBackdrop = document.getElementById('collectBackdrop');
+  const collectForm = document.getElementById('collectForm');
+
+  function closeCollect() { collectBackdrop.classList.remove('open'); collectForm.reset(); document.getElementById('collectSaleId').value = ''; }
+  document.getElementById('collectClose').addEventListener('click', closeCollect);
+  document.getElementById('collectCancel').addEventListener('click', closeCollect);
+  collectBackdrop.addEventListener('click', function (e) { if (e.target === collectBackdrop) closeCollect(); });
+
+  window.openCollect = async function (id) {
+    const all = await GMS.sales.all();
+    const s = all.find(function (v) { return String(v.id) === String(id); });
+    if (!s) return;
+    const due = Math.max(0, GMS.docTotal(s) - (Number(s.cashReceived) || 0));
+    if (due <= 0) { GMSApp.showToast('This bill has no due left.', true); return; }
+    document.getElementById('collectSaleId').value = s.id;
+    document.getElementById('collectTitle').textContent = 'Collect due — Receipt #' + s.id + ' (' + GMS.customerName(s.customerId) + ')';
+    document.getElementById('collectDueText').textContent = GMS.formatMoney(due);
+    document.getElementById('collectAmount').value = due.toFixed(2);
+    document.getElementById('collectAmount').max = due.toFixed(2);
+    document.getElementById('collectDate').value = GMS.todayISO();
+    collectBackdrop.classList.add('open');
+  };
+
+  async function collectPayments(saleId) {
+    const res = await fetch('api/sale_payments.php?sale_id=' + encodeURIComponent(saleId), { credentials: 'same-origin' });
+    const body = await res.json().catch(function () { return null; });
+    if (!res.ok || !body || body.ok === false) throw new Error((body && body.error) || 'Could not load payments.');
+    return body.data || [];
+  }
+
+  collectForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const saleId = Number(document.getElementById('collectSaleId').value);
+    const amountRaw = document.getElementById('collectAmount').value;
+    const date = document.getElementById('collectDate').value || GMS.todayISO();
+    const err = GMS.validate.money(amountRaw, 'Amount', true) || GMS.validate.date(date, 'Payment date');
+    if (err) { GMSApp.showToast(err, true); return; }
+    try {
+      const res = await fetch('api/sale_payments.php', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ saleId: saleId, amount: parseFloat(amountRaw), date: date }),
+      });
+      const body = await res.json().catch(function () { return null; });
+      if (!res.ok || !body || body.ok === false) throw new Error((body && body.error) || 'Could not save payment.');
+      await GMS.refresh('sales');
+      closeCollect();
+      renderHistory();
+      GMSApp.showToast(body.data.due > 0
+        ? 'Payment saved. Remaining due ' + GMS.formatMoney(body.data.due) + '.'
+        : 'Fully paid. Receipt #' + saleId + ' has no due left.');
+    } catch (err) { GMSApp.showToast(err.message, true); }
+  });
 
   window.viewSale = async function (id) {
     const all = await GMS.sales.all();
@@ -235,7 +316,12 @@ document.addEventListener('DOMContentLoaded', async function () {
     }).join('\n');
     const total = GMS.docTotal(s);
     const due = Math.max(0, total - (Number(s.cashReceived) || 0));
-    alert('Receipt ' + s.id + '\nCustomer: ' + GMS.customerName(s.customerId) + '\nDate: ' + GMS.formatDate(s.date) + '\n\n' + lines + '\n\nTotal: ' + GMS.formatMoney(total) + '\nCash received: ' + GMS.formatMoney(s.cashReceived) + '\nDue: ' + GMS.formatMoney(due));
+    let payText = '';
+    try {
+      const pays = await collectPayments(s.id);
+      if (pays.length > 0) payText = '\nPayments:\n' + pays.map(function (p) { return '- ' + GMS.formatMoney(p.amount) + ' on ' + GMS.formatDate(p.date); }).join('\n');
+    } catch (e) {}
+    alert('Receipt ' + s.id + '\nCustomer: ' + GMS.customerName(s.customerId) + '\nDate: ' + GMS.formatDate(s.date) + '\n\n' + lines + '\n\nTotal: ' + GMS.formatMoney(total) + '\nCash received: ' + GMS.formatMoney(s.cashReceived) + '\nDue: ' + GMS.formatMoney(due) + payText);
   };
 
   // init — new sale starts empty, right-side receipt stays ৳0.00 by default.

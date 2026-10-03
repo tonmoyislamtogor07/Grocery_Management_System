@@ -56,6 +56,9 @@ try {
             foreach ($supplierIds as $sid) $stL->execute([$id, $sid]);
         }
         if ($stock > 0) {
+            // Opening batch: no bill/supplier, cost = given purchase price.
+            $st = $pdo->prepare("INSERT INTO stock_lots (product_id, purchase_id, supplier_id, qty_bought, qty_left, unit_cost, expiry_date, received_at) VALUES (?, NULL, NULL, ?, ?, ?, ?, NOW())");
+            $st->execute([$id, $stock, $stock, $purchasePrice, $expiry]);
             $stL = $pdo->prepare("INSERT INTO stock_logs (product_id, change_type, quantity_changed) VALUES (?, 'opening', ?)");
             $stL->execute([$id, $stock]);
         }
@@ -103,6 +106,14 @@ try {
             if (!$st->fetch()) fail('Category not found.', 422);
         }
         $pdo->beginTransaction();
+        // Manual top-up behaves like a purchase for the average: the new batch
+        // cost ($purchasePrice) blends with the old stock at the old average.
+        $oldStock = (int)$old['stock_quantity'];
+        $oldAvg = (float)$old['purchase_price'];
+        $diff = $stock - $oldStock;
+        if ($diff > 0) {
+            $purchasePrice = round(($oldStock * $oldAvg + $diff * $purchasePrice) / ($oldStock + $diff), 2);
+        }
         $st = $pdo->prepare('UPDATE products SET product_name=?, category_id=?, selling_price=?, purchase_price=?, stock_quantity=?, minimum_stock=?, expiry_date=? WHERE product_id=?');
         $st->execute([$name, $categoryId, $price, $purchasePrice, $stock, $reorder, $expiry, $id]);
         if ($touchSuppliers) {
@@ -112,10 +123,18 @@ try {
                 foreach ($supplierIds as $sid) $stL->execute([$id, $sid]);
             }
         }
-        $diff = $stock - (int)$old['stock_quantity'];
+        if ($diff > 0) {
+            // Manual top-up batch at the current cost.
+            $st = $pdo->prepare("INSERT INTO stock_lots (product_id, purchase_id, supplier_id, qty_bought, qty_left, unit_cost, expiry_date, received_at) VALUES (?, NULL, NULL, ?, ?, ?, ?, NOW())");
+            $st->execute([$id, $diff, $diff, $purchasePrice, $expiry]);
+        } elseif ($diff < 0) {
+            // Manual write-off consumes oldest batches first (no sale record).
+            consume_fifo($pdo, $id, -$diff);
+        }
         if ($diff !== 0) {
             $stL = $pdo->prepare("INSERT INTO stock_logs (product_id, change_type, quantity_changed) VALUES (?, 'adjust', ?)");
             $stL->execute([$id, $diff]);
+            refresh_product_expiry($pdo, $id);
         }
         $pdo->commit();
         $st = $pdo->prepare('SELECT * FROM products WHERE product_id = ?');
@@ -127,7 +146,7 @@ try {
         try {
             $pdo->prepare('DELETE FROM products WHERE product_id = ?')->execute([$id]);
         } catch (PDOException $e) {
-            if ($e->getCode() === '23000') fail('Cannot delete: this product appears in purchase, sales or stock records.', 409);
+            if ($e->getCode() === '23000') fail('Cannot delete: this product appears in purchase, sales, batch or stock records.', 409);
             throw $e;
         }
         send_json(['ok' => true]);

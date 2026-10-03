@@ -42,7 +42,7 @@
                 <label>Items</label>
                 <div class="table-wrap">
                   <table>
-                    <thead><tr><th>Product</th><th class="th-qty">Qty</th><th class="th-price">Unit price</th><th class="cell-num th-total">Line total</th><th></th></tr></thead>
+                    <thead><tr><th>Product</th><th class="th-qty">Qty</th><th class="th-price">Unit price</th><th class="cell-num th-total">Line total</th><th class="th-action"></th></tr></thead>
                     <tbody id="lineItemsBody"></tbody>
                   </table>
                 </div>
@@ -101,9 +101,41 @@
   </main>
 </div>
 
+<div class="modal-backdrop" id="collectBackdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="collectTitle">Collect due</h3>
+      <button class="modal-close" id="collectClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="collectForm">
+        <input type="hidden" id="collectSaleId">
+        <div class="field">
+          <label>Remaining due</label>
+          <div class="purchase-total" id="collectDueText">৳0.00</div>
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="collectAmount">Amount received</label>
+            <input type="number" id="collectAmount" min="0.01" step="0.01" placeholder="0.00">
+          </div>
+          <div class="field">
+            <label for="collectDate">Payment date</label>
+            <input type="date" id="collectDate">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="collectCancel">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save payment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script src="js/store.js"></script>
 <script src="js/app.js"></script>
-<script src="js/sales.js"></script>
+<script src="js/sales.js?v=3"></script>
 </body>
 </html>
 
