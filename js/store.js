@@ -1,4 +1,4 @@
-   /* ==========================================================================
+/* ==========================================================================
    store.js — API-backed data layer (PHP + MySQL).
    Same GMS.* names the pages already use, but every read/write now hits
    the PHP API instead of localStorage dummy data. No dummy data here.
@@ -106,6 +106,14 @@ const GMS = (function () {
   function supplierName(id) {
     const s = cache.suppliers.find(function (x) { return Number(x.id) === Number(id); });
     return s ? s.name : '\u2014';
+  }
+  // Option B: many suppliers per product -> "A, B, C" or em-dash.
+  function supplierNames(ids) {
+    if (!ids || ids.length === 0) return '\u2014';
+    return ids.map(function (id) {
+      const s = cache.suppliers.find(function (x) { return Number(x.id) === Number(id); });
+      return s ? s.name : ('#' + id);
+    }).join(', ');
   }
   function customerName(id) {
     if (!id) return 'Walk-in customer';
@@ -294,7 +302,7 @@ const GMS = (function () {
     validate: validate,
     categories: categories, products: products, suppliers: suppliers, customers: customers,
     purchases: purchases, sales: sales, expenses: expenses,
-    categoryName: categoryName, supplierName: supplierName, customerName: customerName,
+    categoryName: categoryName, supplierName: supplierName, supplierNames: supplierNames, customerName: customerName,
     lineTotal: lineTotal, docTotal: docTotal, stockStatus: stockStatus,
     isExpiringSoon: isExpiringSoon, daysUntil: daysUntil,
     applyPurchaseToStock: applyPurchaseToStock, applySaleToStock: applySaleToStock,
