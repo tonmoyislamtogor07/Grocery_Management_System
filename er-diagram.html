@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ER Diagram — Sufian Store GMS (gms_db)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f4f1ea; font-family: Georgia, 'Times New Roman', serif; color: #222; }
+  .page { max-width: 1500px; margin: 0 auto; padding: 20px 24px 40px; }
+  h1 { font-size: 22px; margin: 0 0 2px; }
+  .sub { color: #666; font-size: 14px; margin-bottom: 12px; }
+  .toolbar { margin-bottom: 12px; }
+  .toolbar button {
+    font-family: inherit; font-size: 14px; padding: 7px 16px; cursor: pointer;
+    background: #1e6b3a; color: #fff; border: none; border-radius: 6px;
+  }
+  .sheet { background: #fff; border: 1px solid #ccc; padding: 10px; overflow-x: auto; }
+  svg text { font-family: Georgia, 'Times New Roman', serif; }
+  .legend { margin-top: 14px; font-size: 14px; line-height: 1.65; }
+  .legend b.u { text-decoration: underline; }
+  .legend i { font-style: italic; }
+  .legend code { background: #eee; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  @media print {
+    body { background: #fff; }
+    .page { max-width: none; padding: 0; }
+    .toolbar { display: none; }
+    .sheet { border: none; padding: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Grocery Management System — Entity Relationship Diagram</h1>
+  <div class="sub">Sufian Store &middot; MySQL database <b>gms_db</b> &middot; drawn from <b>database.sql</b> (actual schema)</div>
+  <div class="toolbar"><button onclick="window.print()">Print / Save as PDF</button></div>
+  <div class="sheet"><svg id="er" width="1440" height="1010" viewBox="0 0 1440 1010"></svg></div>
+
+  <div class="legend">
+    <b>Legend:</b> <b class="u">underlined</b> = primary key (PK) &nbsp;·&nbsp; <i>italic</i> = foreign key (FK) &nbsp;·&nbsp;
+    <span style="color:#c0392b;font-weight:bold;">1 / M</span> = one-to-many cardinality.
+    <br><b>Notes (matches the real schema, not the old draft):</b>
+    <br>1. There is no <code>stock_logs</code> table — stock moves through <code>stock_lot</code> batches only.
+    <br>2. <code>product</code> stores no stock, cost or expiry — live stock, average cost and earliest expiry are derived from <code>stock_lot</code> via the read-only view <code>v_product_live</code> (views are not shown in the ER).
+    <br>3. Bill totals, paid and due are <i>derived at read time</i> — <code>purchase</code>/<code>sale</code> store no <code>total_amount</code>, <code>final_amount</code> or <code>cash_received</code>.
+    <br>4. One purchase line creates exactly one batch (<code>purchase_detail 1 — 1 stock_lot</code>); each sale consumes oldest-expiry batches first (<code>sale_lot</code> keeps the audit + exact COGS).
+    <br>5. Walk-in sale need no customer record (<code>sale.customer_id</code> is NULL-able).
+    <br>6. FK actions: <code>purchase.supplier_id</code> RESTRICT · product links / sale lines / payments CASCADE · category &amp; customer references SET NULL · lots SET NULL / RESTRICT.
+  </div>
+</div>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg';
+  var INK = '#c0392b';          // entity / relationship red (same style as reference)
+  var HEADER_FILL = '#d9d9d9';
+  var ROW_H = 23, HEAD_H = 30;
+
+  /* ---------------- entities: x, y, w, attributes [name, flags] ---------------- */
+  var ENT = [
+    { id: 'supplier', x: 20, y: 20, w: 220, attrs: [
+      ['supplier_id', 'pk'], ['supplier_name', ''], ['contact_person', ''],
+      ['phone', ''], ['email', ''], ['address', ''], ['created_at', '']] },
+    { id: 'product_supplier', x: 310, y: 60, w: 240, attrs: [
+      ['product_id', 'pkfk'], ['supplier_id', 'pkfk']] },
+    { id: 'category', x: 620, y: 20, w: 220, attrs: [
+      ['category_id', 'pk'], ['category_name', ''], ['description', ''], ['created_at', '']] },
+    { id: 'customer', x: 1200, y: 20, w: 220, attrs: [
+      ['customer_id', 'pk'], ['customer_name', ''], ['phone', ''],
+      ['email', ''], ['address', ''], ['area', ''], ['created_at', '']] },
+    { id: 'purchase', x: 20, y: 330, w: 220, attrs: [
+      ['purchase_id', 'pk'], ['supplier_id', 'fk'], ['purchase_date', '']] },
+    { id: 'purchase_detail', x: 310, y: 330, w: 240, attrs: [
+      ['purchase_detail_id', 'pk'], ['purchase_id', 'fk'], ['product_id', 'fk'],
+      ['quantity', ''], ['unit_price', '']] },
+    { id: 'product', x: 620, y: 330, w: 220, attrs: [
+      ['product_id', 'pk'], ['product_name', ''], ['category_id', 'fk'], ['barcode', ''],
+      ['selling_price', ''], ['minimum_stock', ''], ['created_at', '']] },
+    { id: 'sale_detail', x: 910, y: 330, w: 220, attrs: [
+      ['sale_detail_id', 'pk'], ['sale_id', 'fk'], ['product_id', 'fk'],
+      ['quantity', ''], ['unit_price', '']] },
+    { id: 'sale', x: 1200, y: 330, w: 220, attrs: [
+      ['sale_id', 'pk'], ['customer_id', 'fk'], ['discount', ''], ['sale_date', '']] },
+    { id: 'app_user', x: 20, y: 560, w: 220, attrs: [
+      ['user_id', 'pk'], ['username', ''], ['password_hash', ''],
+      ['full_name', ''], ['role', ''], ['created_at', '']] },
+    { id: 'stock_lot', x: 310, y: 560, w: 240, attrs: [
+      ['lot_id', 'pk'], ['product_id', 'fk'], ['purchase_id', 'fk'],
+      ['purchase_detail_id', 'fk'], ['qty_bought', ''], ['qty_left', ''],
+      ['unit_cost', ''], ['expiry_date', ''], ['received_at', '']] },
+    { id: 'sale_lot', x: 620, y: 640, w: 220, attrs: [
+      ['sale_detail_id', 'pkfk'], ['lot_id', 'pkfk'], ['quantity', '']] },
+    { id: 'sale_payment', x: 1200, y: 560, w: 220, attrs: [
+      ['payment_id', 'pk'], ['sale_id', 'fk'], ['amount', ''], ['paid_at', '']] },
+    { id: 'expense', x: 620, y: 820, w: 220, attrs: [
+      ['expense_id', 'pk'], ['expense_type', ''], ['description', ''],
+      ['amount', ''], ['expense_date', ''], ['created_at', '']] },
+    { id: 'monthly_target', x: 920, y: 820, w: 220, attrs: [
+      ['month', 'pk'], ['amount', '']] },
+    { id: 'setting', x: 920, y: 912, w: 220, attrs: [
+      ['name', 'pk'], ['value', '']] }
+  ];
+
+  /* -------- relationships: polyline points, diamond center/size, 1/M labels -------- */
+  var EDGES = [
+    { pts: [[240,101],[310,101]], dia: [275,101], hw: 34, hh: 18, name: ['supplies'],
+      labels: [['1',248,92],['M',300,92]] },
+    { pts: [[430,136],[430,200],[700,200],[700,330]], dia: [565,200], hw: 42, hh: 24, name: ['sourced','from'],
+      labels: [['M',438,144],['1',708,322]] },
+    { pts: [[130,211],[130,330]], dia: [130,270], hw: 34, hh: 18, name: ['delivers'],
+      labels: [['1',139,219],['M',139,322]] },
+    { pts: [[240,394],[310,394]], dia: [275,394], hw: 36, hh: 18, name: ['contains'],
+      labels: [['1',248,386],['M',300,386]] },
+    { pts: [[550,417],[620,417]], dia: [585,417], hw: 38, hh: 18, name: ['bought in'],
+      labels: [['M',558,409],['1',610,409]] },
+    { pts: [[730,142],[730,330]], dia: [730,236], hw: 38, hh: 18, name: ['classifies'],
+      labels: [['1',739,150],['M',739,322]] },
+    { pts: [[700,521],[700,590],[480,590],[480,560]], dia: [590,590], hw: 42, hh: 18, name: ['stocked as'],
+      labels: [['1',709,529],['M',488,576]] },
+    { pts: [[240,371],[280,371],[280,540],[380,540],[380,560]], dia: [280,455], hw: 38, hh: 18, name: ['receives'],
+      labels: [['1',248,363],['M',389,552]] },
+    { pts: [[430,475],[430,560]], dia: [430,517], hw: 34, hh: 18, name: ['creates'],
+      labels: [['1',439,483],['1',439,552]] },
+    { pts: [[840,394],[910,394]], dia: [875,394], hw: 34, hh: 18, name: ['sold in'],
+      labels: [['1',848,386],['M',902,386]] },
+    { pts: [[1130,394],[1200,394]], dia: [1165,394], hw: 30, hh: 18, name: ['has'],
+      labels: [['M',1138,386],['1',1190,386]] },
+    { pts: [[1310,211],[1310,330]], dia: [1310,270], hw: 30, hh: 18, name: ['buys'],
+      labels: [['1',1319,219],['M',1319,322]] },
+    { pts: [[1310,448],[1310,560]], dia: [1310,504], hw: 36, hh: 18, name: ['paid by'],
+      labels: [['1',1319,456],['M',1319,552]] },
+    { pts: [[1000,475],[1000,600],[780,600],[780,640]], dia: [890,600], hw: 40, hh: 18, name: ['consumes'],
+      labels: [['1',1009,483],['M',789,632]] },
+    { pts: [[550,681],[620,681]], dia: [585,681], hw: 44, hh: 18, name: ['drawn from'],
+      labels: [['1',558,673],['M',610,673]] }
+  ];
+
+  var svg = document.getElementById('er');
+  function el(tag, attrs, parent) {
+    var n = document.createElementNS(NS, tag);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    (parent || svg).appendChild(n);
+    return n;
+  }
+  function txt(x, y, s, size, extra) {
+    var t = el('text', { x: x, y: y, 'font-size': size || 13 }, svg);
+    if (extra) for (var k in extra) t.setAttribute(k, extra[k]);
+    t.textContent = s;
+    return t;
+  }
+
+  /* lines + diamonds first (under the boxes) */
+  EDGES.forEach(function (e) {
+    var pl = e.pts.map(function (p) { return p[0] + ',' + p[1]; }).join(' ');
+    el('polyline', { points: pl, fill: 'none', stroke: INK, 'stroke-width': 1.6 });
+    var cx = e.dia[0], cy = e.dia[1], hw = e.hw, hh = e.hh;
+    el('polygon', {
+      points: (cx - hw) + ',' + cy + ' ' + cx + ',' + (cy - hh) + ' ' +
+              (cx + hw) + ',' + cy + ' ' + cx + ',' + (cy + hh),
+      fill: '#fff', stroke: INK, 'stroke-width': 1.6
+    });
+    if (e.name.length === 1) {
+      var t = txt(cx, cy + 4, e.name[0], 12, { 'text-anchor': 'middle' });
+    } else {
+      txt(cx, cy - 1, e.name[0], 11, { 'text-anchor': 'middle' });
+      txt(cx, cy + 11, e.name[1], 11, { 'text-anchor': 'middle' });
+    }
+    e.labels.forEach(function (L) {
+      txt(L[1], L[2], L[0], 14, { fill: INK, 'font-weight': 'bold' });
+    });
+  });
+
+  /* entity boxes */
+  ENT.forEach(function (en) {
+    var h = HEAD_H + en.attrs.length * ROW_H;
+    el('rect', { x: en.x, y: en.y, width: en.w, height: HEAD_H, fill: HEADER_FILL, stroke: INK, 'stroke-width': 1.6 });
+    txt(en.x + en.w / 2, en.y + 20, en.id, 15, { 'text-anchor': 'middle', 'font-weight': 'bold' });
+    el('rect', { x: en.x, y: en.y + HEAD_H, width: en.w, height: h - HEAD_H, fill: '#fff', stroke: INK, 'stroke-width': 1.6 });
+    en.attrs.forEach(function (a, i) {
+      var ry = en.y + HEAD_H + i * ROW_H;
+      if (i > 0) el('line', { x1: en.x, y1: ry, x2: en.x + en.w, y2: ry, stroke: INK, 'stroke-width': 1 });
+      var t = txt(en.x + 8, ry + 16, a[0], 13, {});
+      if (a[1] === 'pk' || a[1] === 'pkfk') t.setAttribute('text-decoration', 'underline');
+      if (a[1] === 'fk' || a[1] === 'pkfk') t.setAttribute('font-style', 'italic');
+    });
+  });
+})();
+</script>
+</div>
+</body>
+</html>

@@ -1,7 +1,9 @@
 <?php
 // api/auth.php — role-based login (Owner / Manager / Cashier) + me / logout.
-// Login screen sends {username, password, role}. The account's DB role must
-// match the selected tab, otherwise login is rejected with 403.
+// Login screen sends {username, password}. The backend finds the account
+// and returns its role itself (admin -> owner, manager -> manager,
+// staff -> cashier); an optional `role` field, when sent, must match the
+// account's role or login is rejected with 403.
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../config/db.php';
@@ -47,7 +49,7 @@ if ($wantRole !== '' && !in_array($wantRole, ['owner', 'manager', 'cashier'], tr
 }
 
 try {
-    $st = db()->prepare('SELECT * FROM users WHERE username = ? LIMIT 1');
+    $st = db()->prepare('SELECT * FROM app_user WHERE username = ? LIMIT 1');
     $st->execute([$username]);
     $u = $st->fetch();
     if (!$u || !password_verify($password, $u['password_hash'])) fail('Invalid username or password.', 401);

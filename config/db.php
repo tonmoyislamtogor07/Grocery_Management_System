@@ -153,8 +153,8 @@ function v_id($v, string $field = 'ID'): int {
 /* ==========================================================================
    Role-based access (100% server-side). Login (api/auth.php) stores role_key
    in the PHP session: owner | manager | cashier.
-   - cashier = counter only: READ products/customers/sales (+suppliers/
-     categories names), CREATE sales + sale_payments, ADD customers.
+   - cashier = counter only: READ product/customer/sale (+supplier/
+     category names), CREATE sale + sale_payment, ADD customer.
      NO PUT/DELETE anywhere, NO inventory/purchase/expense writes,
      NO purchase-cost, expense or profit reads.
    - manager/owner: as before (all reads + writes; UI hides a few pages).
@@ -186,6 +186,9 @@ function v_optional_date($v, string $field): ?string {
 }
 
 // Map a DB row -> the shape the UI (store.js) expects.
+// Derived state (stock, avg cost, expiry) comes from v_product_live;
+// callers join it so the row carries `stock`, `avg_cost`, `expiry`.
+// purchasePrice key = current average cost (display + fallback).
 function map_category(array $r): array {
     return ['id' => (int)$r['category_id'], 'name' => $r['category_name'], 'description' => $r['description'] ?? ''];
 }
@@ -193,7 +196,7 @@ function map_supplier(array $r): array {
     return ['id' => (int)$r['supplier_id'], 'name' => $r['supplier_name'], 'phone' => $r['phone'] ?? '', 'address' => $r['address'] ?? ''];
 }
 function map_customer(array $r): array {
-    return ['id' => (int)$r['customer_id'], 'name' => $r['customer_name'], 'phone' => $r['phone'] ?? ''];
+    return ['id' => (int)$r['customer_id'], 'name' => $r['customer_name'], 'phone' => $r['phone'] ?? '', 'area' => $r['area'] ?? ''];
 }
 function map_product(array $r, array $supplierIds = []): array {
     $ids = array_values(array_unique(array_map('intval', $supplierIds)));
@@ -205,30 +208,43 @@ function map_product(array $r, array $supplierIds = []): array {
         'supplierIds' => $ids,
         'supplierId'  => count($ids) > 0 ? (int)$ids[0] : null,
         'price'       => (float)$r['selling_price'],
-        'purchasePrice' => (float)($r['purchase_price'] ?? 0),
-        'stock'       => (int)$r['stock_quantity'],
+        'purchasePrice' => isset($r['avg_cost']) ? (float)$r['avg_cost'] : 0.0,
+        'stock'       => isset($r['stock']) ? (int)$r['stock'] : 0,
         'reorderLevel'=> (int)$r['minimum_stock'],
-        'expiry'      => $r['expiry_date'] ? substr((string)$r['expiry_date'], 0, 10) : '',
+        'expiry'      => !empty($r['expiry']) ? substr((string)$r['expiry'], 0, 10) : '',
     ];
 }
 
-// Allowed suppliers for one product (Option B junction table).
+// SELECT fragment joining derived live state (use with map_product).
+// v_product_live computes stock, average cost and earliest live expiry.
+const LIVE_JOIN = 'LEFT JOIN v_product_live v ON v.product_id = p.product_id';
+
+// Current stock of one product. Callers that mutate go through
+// consume_fifo(), which locks the lot rows themselves (aggregates
+// cannot take FOR UPDATE).
+function live_stock(PDO $pdo, int $productId): int {
+    $st = $pdo->prepare('SELECT COALESCE(SUM(qty_left),0) FROM stock_lot WHERE product_id = ?');
+    $st->execute([$productId]);
+    return (int)$st->fetchColumn();
+}
+
+// Allowed supplier for one product (Option B junction table).
 function product_supplier_ids(PDO $pdo, int $productId): array {
     try {
-        $st = $pdo->prepare('SELECT supplier_id FROM product_suppliers WHERE product_id = ? ORDER BY supplier_id');
+        $st = $pdo->prepare('SELECT supplier_id FROM product_supplier WHERE product_id = ? ORDER BY supplier_id');
         $st->execute([$productId]);
         return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
     } catch (Throwable $e) { return []; }
 }
 
-// Allowed suppliers for many products in one query (avoids N+1 on list).
+// Allowed supplier for many product in one query (avoids N+1 on list).
 function product_suppliers_map(PDO $pdo, array $productIds): array {
     $map = [];
     $ids = array_values(array_unique(array_map('intval', $productIds)));
     if (count($ids) === 0) return $map;
     try {
         $ph = implode(',', array_fill(0, count($ids), '?'));
-        $st = $pdo->prepare("SELECT product_id, supplier_id FROM product_suppliers WHERE product_id IN ($ph) ORDER BY product_id, supplier_id");
+        $st = $pdo->prepare("SELECT product_id, supplier_id FROM product_supplier WHERE product_id IN ($ph) ORDER BY product_id, supplier_id");
         $st->execute($ids);
         foreach ($st->fetchAll() as $row) {
             $pid = (int)$row['product_id'];
@@ -248,7 +264,7 @@ function product_suppliers_map(PDO $pdo, array $productIds): array {
 
 function consume_fifo(PDO $pdo, int $productId, int $qty): array {
     $st = $pdo->prepare(
-        'SELECT lot_id, qty_left, unit_cost FROM stock_lots
+        'SELECT lot_id, qty_left, unit_cost FROM stock_lot
          WHERE product_id = ? AND qty_left > 0
          ORDER BY (expiry_date IS NULL), expiry_date ASC, lot_id ASC FOR UPDATE'
     );
@@ -257,7 +273,7 @@ function consume_fifo(PDO $pdo, int $productId, int $qty): array {
     $need = $qty;
     $alloc = [];
     $cost = 0.0;
-    $stU = $pdo->prepare('UPDATE stock_lots SET qty_left = qty_left - ? WHERE lot_id = ?');
+    $stU = $pdo->prepare('UPDATE stock_lot SET qty_left = qty_left - ? WHERE lot_id = ?');
     foreach ($lots as $lot) {
         if ($need <= 0) break;
         $take = min($need, (int)$lot['qty_left']);
@@ -270,15 +286,6 @@ function consume_fifo(PDO $pdo, int $productId, int $qty): array {
     return ['alloc' => $alloc, 'cost' => round($cost, 2)];
 }
 
-// Keep products.expiry_date = earliest non-empty lot expiry (drives the
-// dashboard watch + product badges). Untouched when no dated lot exists.
-function refresh_product_expiry(PDO $pdo, int $productId): void {
-    $n = (int)$pdo->query('SELECT COUNT(*) FROM stock_lots WHERE product_id = ' . $productId . ' AND qty_left > 0')->fetchColumn();
-    if ($n === 0) return;
-    $min = $pdo->query('SELECT MIN(expiry_date) FROM stock_lots WHERE product_id = ' . $productId . ' AND qty_left > 0 AND expiry_date IS NOT NULL')->fetchColumn();
-    if ($min) $pdo->prepare('UPDATE products SET expiry_date = ? WHERE product_id = ?')->execute([$min, $productId]);
-    else $pdo->prepare('UPDATE products SET expiry_date = NULL WHERE product_id = ?')->execute([$productId]);
-}
 function map_expense(array $r): array {
     return [
         'id' => (int)$r['expense_id'], 'category' => $r['expense_type'] ?? 'General',

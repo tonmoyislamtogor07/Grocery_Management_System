@@ -11,7 +11,7 @@
   const ROLE_PAGES = {
     owner:   ['dashboard', 'cashier', 'products', 'categories', 'purchases', 'sales', 'suppliers', 'customers', 'expenses', 'reports'],
     manager: ['dashboard', 'cashier', 'products', 'categories', 'purchases', 'sales', 'suppliers', 'customers', 'reports'],
-    cashier: ['cashier', 'sales', 'customers'],
+    cashier: ['cashier', 'sales', 'customers', 'reports'],
   };
 
   const NAV_ITEMS = [
@@ -24,7 +24,7 @@
     { page: 'suppliers', href: 'suppliers.html', label: 'Suppliers', icon: 'building', roles: ['owner', 'manager'] },
     { page: 'customers', href: 'customers.html', label: 'Customers', icon: 'user', roles: ['owner', 'manager', 'cashier'] },
     { page: 'expenses', href: 'expenses.html', label: 'Expenses', icon: 'wallet', roles: ['owner'] },
-    { page: 'reports', href: 'reports.html', label: 'Reports', icon: 'chart', roles: ['owner', 'manager'] }
+    { page: 'reports', href: 'reports.html', label: 'Reports', icon: 'chart', roles: ['owner', 'manager', 'cashier'] }
   ];
 
   function allowedPages(role) {

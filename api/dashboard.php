@@ -1,6 +1,7 @@
 <?php
-// api/dashboard.php — summary stats, low-stock/expiry watch, top sellers, recent sales.
-// Everything is computed in SQL so the UI shows live database values.
+// api/dashboard.php — summary stats, low-stock/expiry watch, top sellers, recent sale.
+// Normalized: every figure is computed with SQL joins (no stored totals).
+// COGS is exact (sale_lot -> stock_lot); profit never goes stale.
 header('Content-Type: application/json; charset=utf-8');
 require_once __DIR__ . '/../config/db.php';
 
@@ -10,39 +11,43 @@ try {
     require_roles(['owner', 'manager'], 'view reports');
     $today = date('Y-m-d');
 
-    $totalSales     = (float)$pdo->query('SELECT COALESCE(SUM(final_amount),0) FROM sales')->fetchColumn();
-    $todayRevenue   = (float)$pdo->query('SELECT COALESCE(SUM(final_amount),0) FROM sales WHERE DATE(sale_date) = ' . $pdo->quote($today))->fetchColumn();
-    $totalPurchases = (float)$pdo->query('SELECT COALESCE(SUM(total_amount),0) FROM purchases')->fetchColumn();
-    $totalExpenses  = (float)$pdo->query('SELECT COALESCE(SUM(amount),0) FROM expenses')->fetchColumn();
-    // Cost of Goods Sold: only the cost of products actually sold
-    // (sold qty × current purchase price), NOT the whole inventory purchase.
-    // Cost of Goods Sold: snapshot cost if present, else current purchase price.
-    $cogs = (float)$pdo->query('SELECT COALESCE(SUM(sd.quantity * COALESCE(sd.unit_cost, p.purchase_price)),0) FROM sale_details sd JOIN products p ON p.product_id = sd.product_id')->fetchColumn();
+    $lineTotal = 'COALESCE(SUM(d.quantity * d.unit_price),0)';
+    $totalSales  = (float)$pdo->query("SELECT $lineTotal - COALESCE((SELECT SUM(discount) FROM sale),0) FROM sale_detail d")->fetchColumn();
+    $todayRevenue = (float)$pdo->query(
+        "SELECT $lineTotal - COALESCE((SELECT SUM(discount) FROM sale WHERE DATE(sale_date) = " . $pdo->quote($today) . "),0)
+         FROM sale_detail d JOIN sale s ON s.sale_id = d.sale_id WHERE DATE(s.sale_date) = " . $pdo->quote($today)
+    )->fetchColumn();
+    $totalPurchases = (float)$pdo->query('SELECT COALESCE(SUM(quantity * unit_price),0) FROM purchase_detail')->fetchColumn();
+    $totalExpenses  = (float)$pdo->query('SELECT COALESCE(SUM(amount),0) FROM expense')->fetchColumn();
+    // Cost of Goods Sold: exact lot costs of what was actually sold.
+    $cogs = (float)$pdo->query('SELECT COALESCE(SUM(sl.quantity * l.unit_cost),0) FROM sale_lot sl JOIN stock_lot l ON l.lot_id = sl.lot_id')->fetchColumn();
     $grossProfit = $totalSales - $cogs;
     $netProfit = $grossProfit - $totalExpenses;
-    $productCount   = (int)$pdo->query('SELECT COUNT(*) FROM products')->fetchColumn();
-    $salesCount     = (int)$pdo->query('SELECT COUNT(*) FROM sales')->fetchColumn();
-    $lowStockCount  = (int)$pdo->query('SELECT COUNT(*) FROM products WHERE stock_quantity <= minimum_stock')->fetchColumn();
+    $productCount   = (int)$pdo->query('SELECT COUNT(*) FROM product')->fetchColumn();
+    $salesCount     = (int)$pdo->query('SELECT COUNT(*) FROM sale')->fetchColumn();
+    $lowStockCount  = (int)$pdo->query('SELECT COUNT(*) FROM product p LEFT JOIN v_product_live v ON v.product_id = p.product_id WHERE COALESCE(v.stock,0) <= p.minimum_stock')->fetchColumn();
 
     $watch = $pdo->query(
-        "SELECT p.product_id, p.product_name, p.stock_quantity, p.minimum_stock, p.expiry_date, c.category_name,
-                DATEDIFF(p.expiry_date, CURDATE()) AS days_left
-         FROM products p LEFT JOIN categories c ON c.category_id = p.category_id
-         WHERE p.stock_quantity <= p.minimum_stock
-            OR (p.expiry_date IS NOT NULL AND p.expiry_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY))
-         ORDER BY p.stock_quantity ASC LIMIT 20"
+        "SELECT p.product_id, p.product_name, COALESCE(v.stock,0) AS stock, p.minimum_stock, v.expiry AS expiry_date, c.category_name,
+                DATEDIFF(v.expiry, CURDATE()) AS days_left
+         FROM product p LEFT JOIN v_product_live v ON v.product_id = p.product_id
+         LEFT JOIN category c ON c.category_id = p.category_id
+         WHERE COALESCE(v.stock,0) <= p.minimum_stock
+            OR (v.expiry IS NOT NULL AND v.expiry <= DATE_ADD(CURDATE(), INTERVAL 30 DAY))
+         ORDER BY stock ASC LIMIT 20"
     )->fetchAll();
 
     $top = $pdo->query(
-        'SELECT p.product_id, p.product_name, c.category_name, SUM(sd.quantity) qty, SUM(sd.subtotal) revenue
-         FROM sale_details sd JOIN products p ON p.product_id = sd.product_id
-         LEFT JOIN categories c ON c.category_id = p.category_id
+        'SELECT p.product_id, p.product_name, c.category_name, SUM(sd.quantity) qty, SUM(sd.quantity * sd.unit_price) revenue
+         FROM sale_detail sd JOIN product p ON p.product_id = sd.product_id
+         LEFT JOIN category c ON c.category_id = p.category_id
          GROUP BY p.product_id ORDER BY qty DESC LIMIT 5'
     )->fetchAll();
 
     $recent = $pdo->query(
-        'SELECT s.sale_id, s.sale_date, s.final_amount, cu.customer_name
-         FROM sales s LEFT JOIN customers cu ON cu.customer_id = s.customer_id
+        'SELECT s.sale_id, s.sale_date, s.discount, cu.customer_name,
+                COALESCE((SELECT SUM(d.quantity * d.unit_price) FROM sale_detail d WHERE d.sale_id = s.sale_id),0) AS gross
+         FROM sale s LEFT JOIN customer cu ON cu.customer_id = s.customer_id
          ORDER BY s.sale_date DESC, s.sale_id DESC LIMIT 6'
     )->fetchAll();
 
@@ -58,7 +63,7 @@ try {
         ],
         'watch' => array_map(function ($r) {
             return ['id' => (int)$r['product_id'], 'name' => $r['product_name'], 'category' => $r['category_name'] ?? '—',
-                    'stock' => (int)$r['stock_quantity'], 'reorderLevel' => (int)$r['minimum_stock'],
+                    'stock' => (int)$r['stock'], 'reorderLevel' => (int)$r['minimum_stock'],
                     'expiry' => $r['expiry_date'] ? substr($r['expiry_date'], 0, 10) : '',
                     'daysLeft' => $r['days_left'] !== null ? (int)$r['days_left'] : null];
         }, $watch),
@@ -67,7 +72,7 @@ try {
         }, $top),
         'recent' => array_map(function ($r) {
             return ['id' => (int)$r['sale_id'], 'customer' => $r['customer_name'] ?? 'Walk-in customer',
-                    'date' => substr($r['sale_date'], 0, 10), 'total' => (float)$r['final_amount']];
+                    'date' => substr($r['sale_date'], 0, 10), 'total' => round((float)$r['gross'] - (float)$r['discount'], 2)];
         }, $recent),
     ]]);
 } catch (Throwable $e) { fail('Database error: ' . $e->getMessage(), 500); }

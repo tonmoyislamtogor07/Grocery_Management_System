@@ -29,6 +29,7 @@
             <button class="btn btn-ghost btn-sm" data-tab="topselling">Top-Selling</button>
             <button class="btn btn-ghost btn-sm" data-tab="inventory">Low-Stock &amp; Expiry</button>
             <button class="btn btn-ghost btn-sm" data-tab="suppliers">Supplier Summary</button>
+            <button class="btn btn-ghost btn-sm" data-tab="insights">Insights</button>
           </div>
           <div class="toolbar" id="dateFilterBar">
             <select id="periodSelect">
@@ -37,6 +38,13 @@
               <option value="yearly">Yearly</option>
               <option value="all">All time</option>
             </select>
+            <select id="insightRange" style="display:none">
+              <option value="last6">Last 6 months</option>
+              <option value="last12" selected>Last 12 months</option>
+              <option value="ytd">This year (YTD)</option>
+              <option value="all">All time</option>
+            </select>
+            <select id="insightMonth" style="display:none" title="YTD through month"></select>
           </div>
         </div>
 

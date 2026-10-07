@@ -30,7 +30,7 @@
         <div class="ledger-panel-body ledger-panel-body--flush">
           <div class="table-wrap">
             <table>
-              <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th class="cell-num">Purchases made</th><th></th></tr></thead>
+              <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Area</th><th class="cell-num">Purchases made</th><th></th></tr></thead>
               <tbody id="tableBody"></tbody>
             </table>
           </div>
@@ -56,6 +56,10 @@
         <div class="field">
           <label for="customerPhone">Phone <span class="text-muted">(optional)</span></label>
           <input type="tel" id="customerPhone" placeholder="01XXXXXXXXX">
+        </div>
+        <div class="field">
+          <label for="customerArea">Area <span class="text-muted">(optional — for area-wise sales)</span></label>
+          <input type="text" id="customerArea" placeholder="e.g. Sonadanga" maxlength="100">
         </div>
         <div class="form-actions">
           <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>

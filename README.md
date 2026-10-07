@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/32738536/README.md)
 # Sufian Store — Grocery Management System (PHP + MySQL)
 
 Full-stack build for the GMS project (Database Systems, 2026-II, Group 05).
@@ -12,11 +11,17 @@ No frameworks, no build step. No dummy data — every page reads/writes the data
    - **phpMyAdmin:** create database `gms_db` → Import → choose `database.sql` → Go.
    - **CLI:** `mysql -u root -p -e "CREATE DATABASE gms_db"` then
      `mysql -u root -p gms_db < database.sql`
-3. Tables match the ER diagram (`users, categories, suppliers, customers,
-   products, purchases, purchase_details, sales, sale_details, expenses,
-   stock_logs`) plus one extra column the POS screen needs:
-   `sales.cash_received`. Seeded logins: **Owner** `admin / admin123`,
-   **Manager** `manager / manager123`, **Cashier** `cashier / cashier123`.
+3. Tables match the ER diagram (`app_user, category, supplier, customer,
+   product, product_supplier, purchase, purchase_detail, stock_lot,
+   sale, sale_detail, sale_lot, sale_payment, expense`) plus a
+   read-only view `v_product_live` (live stock, average cost and earliest
+   expiry per product — all derived from `stock_lot`, never stored).
+   Stock moves in real batches: each purchase line creates one `stock_lot`
+   row (own cost + expiry), each sale consumes oldest-expiry batches first
+   (`sale_lot` keeps the exact audit + COGS). Bill totals, paid and due
+   are all derived at read time — nothing stored. Seeded logins:
+   **Owner** `admin / admin123`, **Manager** `manager / manager123`,
+   **Cashier** `cashier / cashier123`.
 
 If MySQL uses a non-default user/password/host, set env vars before
 starting PHP: `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS`
@@ -38,8 +43,12 @@ the backend finds the account and detects its role itself
 passwords `admin123` / `manager123` / `cashier123`). Access is role-based:
 Owner = all pages, Manager = all except Expenses, Cashier = its own
 Cashier Dashboard (today's bills, sales, cash, due + quick actions) +
-New Sale + Customers only — never profit, purchase cost, expenses or
-reports; typing a restricted page URL bounces you to your home page.
+New Sale + Customers + a limited Reports view (Sales, Top-Selling and
+Low-Stock & Expiry tabs only) — never profit, purchase cost, expense,
+purchase or supplier figures; typing a restricted page URL bounces you
+to your home page. Cost fields are also stripped server-side for the
+cashier role (`product.purchasePrice` reads as 0, bill line costs read
+as null).
 Partial payment is allowed: unpaid amount stays as **due** on the bill.
 
 With XAMPP: copy this folder to `htdocs/gms-website`, start Apache +
@@ -49,16 +58,20 @@ MySQL, visit `http://localhost/gms-website`.
 
 - `js/store.js` is an **API client** (previously localStorage dummy data).
   Same `GMS.*` names, but async: `await GMS.ready`, then
-  `await GMS.products.all()`, `await GMS.sales.add(...)`, etc.
-- Every page (`dashboard, products, categories, suppliers, customers,
-  purchases, sales, expenses, reports`) fetches from / writes to MySQL.
-- Stock moves **inside MySQL transactions**:
-  - `POST api/purchases.php` inserts `purchases` + `purchase_details`,
-    increases `products.stock_quantity`, writes `stock_logs`.
-  - `POST api/sales.php` validates stock (oversell → HTTP 409), inserts
-    `sales` + `sale_details`, decreases stock, writes `stock_logs`.
+  `await GMS.product.all()`, `await GMS.sale.add(...)`, etc.
+- Every page (`dashboard, product, category, supplier, customer,
+  purchase, sale, expense, reports`) fetches from / writes to MySQL.
+- Stock moves **inside MySQL transactions** (real batches, FEFO):
+  - `POST api/purchases.php` inserts `purchase` + `purchase_detail` and
+    creates one `stock_lot` row per line (own cost + expiry); the supplier
+    is auto-linked to each product (`product_supplier`).
+  - `POST api/sales.php` validates live batch stock (oversell → HTTP 409),
+    inserts `sale` + `sale_detail`, consumes oldest-expiry lots first and
+    records the audit in `sale_lot`; the first cash taken is stored as a
+    `sale_payment` row (later dues are collected via `api/sale_payments.php`,
+    which rejects overpayment).
 - Deletes respect foreign keys (e.g. a product in a receipt, or a
-  supplier with purchases, cannot be deleted — the API returns 409 and
+  supplier with purchase, cannot be deleted — the API returns 409 and
   the UI shows the message).
 - **Validation + security (`config/db.php`):** every endpoint passes
   untrusted input through `v_*` validators before the database —
@@ -71,36 +84,36 @@ MySQL, visit `http://localhost/gms-website`.
   capped at 1 MB. The UI mirrors the same rules instantly via
   `GMS.validate` before sending.
 - `GET api/dashboard.php` computes stats, low-stock/expiry watch,
-  top sellers and recent sales in SQL. Profit is COGS-based:
-  Gross = sales − cost of actually sold goods
-  (`sale_details.qty × products.purchase_price`), Net = gross − expenses.
+  top sellers and recent sale in SQL. Profit is COGS-based:
+  Gross = sale − cost of actually sold goods
+  (`sale_detail.qty × product.purchase_price`), Net = gross − expense.
   Unsold stock is never subtracted from profit. Each bill also snapshots
-  the purchase price at sale time (`sale_details.unit_cost`), so later
+  the purchase price at sale time (`sale_detail.unit_cost`), so later
   cost changes never rewrite profit history.
 
 ## Pages
 
 | File | Purpose |
 |---|---|
-| `index.html` | Login (checks `users` table via `api/auth.php`) |
-| `cashier.html` | Cashier Dashboard — today's bills/sales/cash/due + quick actions |
-| `dashboard.html` | Summary stats, low-stock/expiry watch, top sellers, recent sales |
-| `products.html` | Product catalog — add/edit/delete, stock & expiry status |
-| `categories.html` | Category management |
-| `suppliers.html` | Supplier contacts & purchase counts |
-| `customers.html` | Customer contacts (walk-ins don't need a record) |
-| `purchases.html` | Record stock from suppliers (auto-increases stock) |
-| `sales.html` | POS invoice — receipt preview, printable cash memo (auto-decreases stock) |
-| `expenses.html` | Rent, electricity, salary, transport, etc. |
+| `index.html` | Login (checks `app_user` table via `api/auth.php`) |
+| `cashier.html` | Cashier Dashboard — today's bills/sale/cash/due + quick actions |
+| `dashboard.html` | Summary stats, low-stock/expiry watch, top sellers, recent sale |
+| `product.html` | Product catalog — add/edit/delete, stock & expiry status |
+| `category.html` | Category management |
+| `supplier.html` | Supplier contacts & purchase counts |
+| `customer.html` | Customer contacts (walk-ins don't need a record) |
+| `purchase.html` | Record stock from supplier (auto-increases stock) |
+| `sale.html` | POS invoice — receipt preview, printable cash memo (auto-decreases stock) |
+| `expense.html` | Rent, electricity, salary, transport, etc. |
 | `reports.html` | Sales, Purchases, Profit, Top-Selling, Low-Stock & Expiry, Supplier Summary |
 
 ## File structure
 
 ```
 gms-website/
-├── index.html  dashboard.html  products.html  categories.html
-├── suppliers.html  customers.html  purchases.html  sales.html
-├── expenses.html  reports.html
+├── index.html  dashboard.html  product.html  category.html
+├── supplier.html  customer.html  purchase.html  sale.html
+├── expense.html  reports.html
 ├── database.sql            (schema + seed data — import into MySQL)
 ├── config/
 │   └── db.php              (PDO connection + row→UI mappers)
@@ -113,19 +126,21 @@ gms-website/
 │   ├── expenses.php        (CRUD)
 │   ├── purchases.php       (list + create with stock increase)
 │   ├── sales.php           (list + create with stock decrease)
+│   ├── sale_payments.php   (due collection, overpay rejected)
+│   ├── lots.php            (batch view per product)
 │   └── dashboard.php       (stats / watch / top / recent)
 ├── css/
 │   └── ...                 (shared design system)
 └── js/
     ├── store.js            (API data layer — replaces dummy data)
     ├── app.js              (sidebar nav, auth guard, toasts)
-    ├── dashboard.js  products.js  categories.js  suppliers.js
-    ├── customers.js  purchases.js  sales.js  expenses.js  reports.js
+    ├── dashboard.js  product.js  category.js  supplier.js
+    ├── customer.js  purchase.js  sale.js  expense.js  reports.js
 ```
 
 ## Design notes
 
 "Digital ledger" look drawn from the shop's paper forms — ruled tables,
-receipt-style totals on the sales screen, left accent bars for
+receipt-style totals on the sale screen, left accent bars for
 stock/expiry status. Deep green + turmeric accent, Space Grotesk
 headings + Inter body.

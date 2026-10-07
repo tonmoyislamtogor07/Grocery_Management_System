@@ -363,7 +363,7 @@ tbody tr.row-danger { border-left: 3px solid var(--red); }
 
 .btn-primary:hover { background: var(--green-900); }
 
-.btn-accent { background: var(--turmeric); color: #fff; }
+.btn-accent { background: var(--green-600); color: #fff; }
 
 .btn-accent:hover { background: var(--turmeric-dark); }
 

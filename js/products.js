@@ -180,12 +180,8 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     const data = {
       name: name, categoryId: Number(categoryId), price: price, purchasePrice: purchasePrice, stock: stock,
-<<<<<<< HEAD
-      reorderLevel: isNaN(reorderLevel) ? 5 : reorderLevel, expiry: expiry || ''
-=======
       reorderLevel: isNaN(reorderLevel) ? 5 : reorderLevel, expiry: expiry || '',
       supplierIds: selectedSupplierIds()
->>>>>>> new1.0
     };
 
     try {
@@ -210,14 +206,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     document.getElementById('productCategory').innerHTML = await categoryOptions(p.categoryId);
     document.getElementById('productPrice').value = p.price;
     document.getElementById('productPurchasePrice').value = (p.purchasePrice !== undefined && p.purchasePrice !== null) ? p.purchasePrice : p.price;
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-    document.getElementById('productSuppliers').innerHTML = await supplierCheckboxes(p.supplierIds || (p.supplierId ? [p.supplierId] : []));
->>>>>>> new1.0
-=======
     await renderSupplierMsel(p.supplierIds || (p.supplierId ? [p.supplierId] : []));
->>>>>>> new1.0
     document.getElementById('productStock').value = p.stock;
     document.getElementById('productReorder').value = p.reorderLevel;
     document.getElementById('productExpiry').value = p.expiry || '';
@@ -225,6 +214,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   };
 
   window.deleteProduct = async function (id) {
+    if (!confirm('Delete this product? This cannot be undone.')) return;
     try {
       await GMS.products.remove(Number(id));
       GMSApp.showToast('Product deleted.');
