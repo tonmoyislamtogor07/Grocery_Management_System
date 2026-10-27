@@ -27,12 +27,16 @@ DROP TABLE IF EXISTS expense;
 DROP TABLE IF EXISTS app_user;
 SET FOREIGN_KEY_CHECKS = 1;
 
+-- Users are never deleted once they have history: set is_active = 0 instead.
+-- user_id is the actor on sale/purchase/expense and must always come from
+-- $_SESSION['user_id'] in PHP, never from a form field.
 CREATE TABLE `app_user` (
   `user_id` int PRIMARY KEY AUTO_INCREMENT,
   `username` varchar(100) NOT NULL UNIQUE,
   `password_hash` varchar(255) NOT NULL,
   `full_name` varchar(150) DEFAULT NULL,
   `role` enum('admin','manager','staff') NOT NULL DEFAULT 'admin',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -88,11 +92,17 @@ CREATE TABLE `product_supplier` (
   CONSTRAINT `fk_psup_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `supplier` (`supplier_id`) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+-- user_id = the app_user who recorded this purchase. The column type must
+-- match app_user.user_id exactly (both are signed INT) or MySQL will refuse
+-- the foreign key. Deactivate a user instead of deleting one with history.
 CREATE TABLE `purchase` (
   `purchase_id` int PRIMARY KEY AUTO_INCREMENT,
   `supplier_id` int NOT NULL,
+  `user_id` int NOT NULL,
   `purchase_date` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT `fk_purchases_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `supplier` (`supplier_id`) ON DELETE RESTRICT ON UPDATE CASCADE
+  KEY `idx_purchase_user_date` (`user_id`, `purchase_date`),
+  CONSTRAINT `fk_purchases_supplier` FOREIGN KEY (`supplier_id`) REFERENCES `supplier` (`supplier_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_purchases_user` FOREIGN KEY (`user_id`) REFERENCES `app_user` (`user_id`) ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 -- One purchase line = one fact (bill snapshot). Line total and expiry live
@@ -135,12 +145,18 @@ CREATE TABLE `stock_lot` (
 -- sale keeps ONLY independent facts. Totals are derived:
 -- total = SUM(sale_detail.quantity*unit_price), final = total - discount,
 -- paid = SUM(sale_payment.amount) (the first cash IS a payment row).
+-- user_id = cashier/staff member who recorded this sale (from the session).
+-- sale_detail, sale_payment and sale_lot deliberately do NOT copy user_id:
+-- they inherit the actor through sale_id.
 CREATE TABLE `sale` (
   `sale_id` int PRIMARY KEY AUTO_INCREMENT,
   `customer_id` int DEFAULT NULL,
+  `user_id` int NOT NULL,
   `discount` decimal(10,2) NOT NULL DEFAULT 0.00 CHECK (`discount` >= 0),
   `sale_date` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT `fk_sales_customer` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`customer_id`) ON DELETE SET NULL ON UPDATE CASCADE
+  KEY `idx_sale_user_date` (`user_id`, `sale_date`),
+  CONSTRAINT `fk_sales_customer` FOREIGN KEY (`customer_id`) REFERENCES `customer` (`customer_id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT `fk_sales_user` FOREIGN KEY (`user_id`) REFERENCES `app_user` (`user_id`) ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 -- Due collections: every cash movement on a bill, INCLUDING the first cash
@@ -176,13 +192,17 @@ CREATE TABLE `sale_lot` (
   CONSTRAINT `fk_sl_lot` FOREIGN KEY (`lot_id`) REFERENCES `stock_lot` (`lot_id`) ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
+-- user_id = the app_user who recorded this expense (from the session).
 CREATE TABLE `expense` (
   `expense_id` int PRIMARY KEY AUTO_INCREMENT,
+  `user_id` int NOT NULL,
   `expense_type` varchar(100) DEFAULT 'General',
   `description` text,
   `amount` decimal(12,2) NOT NULL CHECK (`amount` > 0),
   `expense_date` date NOT NULL,
-  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY `idx_expense_user_date` (`user_id`, `expense_date`),
+  CONSTRAINT `fk_expenses_user` FOREIGN KEY (`user_id`) REFERENCES `app_user` (`user_id`) ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 -- Derived product state (stock, average cost, earliest live expiry).
@@ -199,10 +219,12 @@ GROUP BY p.product_id;
 
 -- ---------------- Seed data ----------------
 
-INSERT INTO `app_user` (`username`, `password_hash`, `full_name`, `role`) VALUES
-('admin', '$2y$10$c4kvCW8Jv5TU3aRo5h24hefCCOU8Dd/o72DsM6YliTGpuvMs5.RW2', 'Store Owner', 'admin'),
-('manager', '$2y$10$wZjq.N9HUmu11MRxWpegk.7f4/lUEDaJliBW7RftzL.Sniv.NXM62', 'Store Manager', 'manager'),
-('cashier', '$2y$10$bwdS2urRYfTnLAXgDWGcpuX3eomYxM2g6C7gumP2lCjOwyYUsdsCK', 'Store Cashier', 'staff');
+-- All users start active. To remove a user from login, set is_active = 0;
+-- do not DELETE while the user owns sale/purchase/expense history (RESTRICT).
+INSERT INTO `app_user` (`user_id`, `username`, `password_hash`, `full_name`, `role`, `is_active`) VALUES
+(1, 'admin', '$2y$10$c4kvCW8Jv5TU3aRo5h24hefCCOU8Dd/o72DsM6YliTGpuvMs5.RW2', 'Store Owner', 'admin', 1),
+(2, 'manager', '$2y$10$wZjq.N9HUmu11MRxWpegk.7f4/lUEDaJliBW7RftzL.Sniv.NXM62', 'Store Manager', 'manager', 1),
+(3, 'cashier', '$2y$10$bwdS2urRYfTnLAXgDWGcpuX3eomYxM2g6C7gumP2lCjOwyYUsdsCK', 'Store Cashier', 'staff', 1);
 
 INSERT INTO `category` (`category_id`, `category_name`, `description`) VALUES
 (1, 'Rice & Grains', NULL),
@@ -233,53 +255,74 @@ INSERT INTO `product` (`product_id`, `product_name`, `category_id`, `selling_pri
 INSERT INTO `product_supplier` (`product_id`, `supplier_id`) VALUES
 (1, 1),
 (2, 1),
+(2, 2),
 (3, 3),
 (4, 2),
 (5, 3),
 (6, 1),
 (7, 3);
 
-INSERT INTO `purchase` (`purchase_id`, `supplier_id`, `purchase_date`) VALUES
-(1, 1, '2026-08-20 10:00:00');
+-- user_id 1 = admin, 2 = manager, 3 = cashier/staff.
+INSERT INTO `purchase` (`purchase_id`, `supplier_id`, `user_id`, `purchase_date`) VALUES
+(1, 1, 1, '2026-08-20 10:00:00'),
+(2, 2, 2, '2026-09-10 09:30:00');
 
-INSERT INTO `purchase_detail` (`purchase_id`, `product_id`, `quantity`, `unit_price`) VALUES
-(1, 1, 10, 1750.00),
-(1, 6, 8, 1550.00);
+INSERT INTO `purchase_detail` (`purchase_detail_id`, `purchase_id`, `product_id`, `quantity`, `unit_price`) VALUES
+(1, 1, 1, 10, 1750.00),
+(2, 1, 6, 8, 1550.00),
+(3, 2, 2, 20, 865.00),
+(4, 2, 4, 12, 88.00);
 
 -- Seed lots: qty_left = current stock; qty_bought includes what seed sale consumed.
 -- received_at predates real bills so FEFO order stays sensible.
-INSERT INTO `stock_lot` (`product_id`, `purchase_id`, `qty_bought`, `qty_left`, `unit_cost`, `expiry_date`, `received_at`) VALUES
-(1, NULL, 14, 14, 1750.00, '2027-01-15', '2026-08-01 09:00:00'),
-(2, NULL, 3, 3, 880.00, '2027-06-01', '2026-08-01 09:00:00'),
-(3, NULL, 125, 120, 12.00, '2026-09-20', '2026-08-01 09:00:00'),
-(4, NULL, 10, 8, 85.00, '2026-09-10', '2026-08-01 09:00:00'),
-(5, NULL, 62, 60, 38.00, '2028-01-01', '2026-08-01 09:00:00'),
-(7, NULL, 46, 45, 32.00, '2028-05-01', '2026-08-01 09:00:00');
+-- Lots 7-8 are the batches created by purchase 2 (one lot per purchase line).
+INSERT INTO `stock_lot` (`lot_id`, `product_id`, `purchase_id`, `purchase_detail_id`, `qty_bought`, `qty_left`, `unit_cost`, `expiry_date`, `received_at`) VALUES
+(1, 1, NULL, NULL, 14, 14, 1750.00, '2027-01-15', '2026-08-01 09:00:00'),
+(2, 2, NULL, NULL, 3, 3, 880.00, '2027-06-01', '2026-08-01 09:00:00'),
+(3, 3, NULL, NULL, 125, 110, 12.00, '2026-09-20', '2026-08-01 09:00:00'),
+(4, 4, NULL, NULL, 10, 6, 85.00, '2026-09-10', '2026-08-01 09:00:00'),
+(5, 5, NULL, NULL, 62, 60, 38.00, '2028-01-01', '2026-08-01 09:00:00'),
+(6, 7, NULL, NULL, 46, 45, 32.00, '2028-05-01', '2026-08-01 09:00:00'),
+(7, 2, 2, 3, 20, 18, 865.00, '2027-05-20', '2026-09-10 09:30:00'),
+(8, 4, 2, 4, 12, 12, 88.00, '2026-09-25', '2026-09-10 09:30:00');
 
-INSERT INTO `sale` (`sale_id`, `customer_id`, `discount`, `sale_date`) VALUES
-(1, 1, 0.00, '2026-09-04 12:00:00'),
-(2, NULL, 0.00, '2026-09-05 13:00:00');
+INSERT INTO `sale` (`sale_id`, `customer_id`, `user_id`, `discount`, `sale_date`) VALUES
+(1, 1, 1, 0.00, '2026-09-04 12:00:00'),
+(2, NULL, 3, 0.00, '2026-09-05 13:00:00'),
+(3, 2, 2, 20.00, '2026-09-12 11:15:00');
 
 INSERT INTO `sale_detail` (`sale_detail_id`, `sale_id`, `product_id`, `quantity`, `unit_price`) VALUES
 (1, 1, 3, 5, 15.00),
 (2, 1, 5, 2, 45.00),
 (3, 2, 4, 2, 95.00),
-(4, 2, 7, 1, 40.00);
+(4, 2, 7, 1, 40.00),
+(5, 3, 2, 2, 940.00),
+(6, 3, 4, 2, 95.00),
+(7, 3, 3, 10, 15.00);
 
--- Which seed lots the seed sale consumed (lots above are already reduced).
+-- Which seed lots the seed sales consumed (lots above are already reduced).
 INSERT INTO `sale_lot` (`sale_detail_id`, `lot_id`, `quantity`) VALUES
 (1, 3, 5),
 (2, 5, 2),
 (3, 4, 2),
-(4, 6, 1);
+(4, 6, 1),
+(5, 7, 2),
+(6, 4, 2),
+(7, 3, 10);
 
 -- Cash taken at sale time IS a payment row (paid = SUM(amount)).
 -- Amounts never exceed their bill totals (the API rejects overpayment).
 INSERT INTO `sale_payment` (`sale_id`, `amount`, `paid_at`) VALUES
 (1, 100.00, '2026-09-04 12:00:00'),
-(2, 230.00, '2026-09-05 13:00:00');
+(2, 230.00, '2026-09-05 13:00:00'),
+(3, 2000.00, '2026-09-12 11:15:00');
 
-INSERT INTO `expense` (`expense_id`, `expense_type`, `description`, `amount`, `expense_date`) VALUES
-(1, 'Rent', 'Monthly shop rent', 12000.00, '2026-09-01'),
-(2, 'Electricity', 'August electricity bill', 2400.00, '2026-09-02'),
-(3, 'Transport', 'Goods transport from wholesaler', 800.00, '2026-09-03');
+-- Expenses recorded by different users (rent/admin, utilities/manager,
+-- transport + packaging/cashier).
+INSERT INTO `expense` (`expense_id`, `user_id`, `expense_type`, `description`, `amount`, `expense_date`) VALUES
+(1, 1, 'Rent', 'Monthly shop rent', 12000.00, '2026-09-01'),
+(2, 2, 'Electricity', 'August electricity bill', 2400.00, '2026-09-02'),
+(3, 3, 'Transport', 'Goods transport from wholesaler', 800.00, '2026-09-03'),
+(4, 1, 'Salary', 'September staff salary', 18000.00, '2026-09-05'),
+(5, 2, 'Internet', 'Shop internet bill', 1200.00, '2026-09-06'),
+(6, 3, 'Packaging', 'Carry bags and packaging tape', 650.00, '2026-09-07');
