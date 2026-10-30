@@ -8,6 +8,11 @@ document.addEventListener('DOMContentLoaded', async function () {
   let searchTerm = '';
   let lineCounter = 0;
 
+  function roleLabel(role) {
+    const labels = { admin: 'Owner', owner: 'Owner', manager: 'Manager', staff: 'Cashier', cashier: 'Cashier' };
+    return labels[String(role || '').toLowerCase()] || role;
+  }
+
   async function supplierOptions() {
     const all = await GMS.suppliers.all();
     return all.map(function (s) { return '<option value="' + s.id + '">' + s.name + '</option>'; }).join('');
@@ -17,12 +22,12 @@ document.addEventListener('DOMContentLoaded', async function () {
     const term = searchTerm.toLowerCase();
     const all = await GMS.purchases.all();
     const rows = all
-      .filter(function (p) { return GMS.supplierName(p.supplierId).toLowerCase().includes(term) || String(p.id).toLowerCase().includes(term); })
+      .filter(function (p) { return GMS.supplierName(p.supplierId).toLowerCase().includes(term) || String(p.id).toLowerCase().includes(term) || String(p.recordedBy || '').toLowerCase().includes(term) || String(p.recordedUsername || '').toLowerCase().includes(term); })
       .sort(function (a, b) { return b.date.localeCompare(a.date); });
 
     const body = document.getElementById('tableBody');
     if (rows.length === 0) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="6">No purchases recorded yet.</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="7">No purchases recorded yet.</td></tr>';
       return;
     }
 
@@ -31,11 +36,16 @@ document.addEventListener('DOMContentLoaded', async function () {
         '<td class="muted-cell">' + p.id + '</td>' +
         '<td>' + GMS.supplierName(p.supplierId) + '</td>' +
         '<td>' + GMS.formatDate(p.date) + '</td>' +
+        '<td>' + escapeHtml(p.recordedBy || '—') + (p.recordedUsername ? '<br><small>@' + escapeHtml(p.recordedUsername) + (p.recordedRole ? ' · ' + escapeHtml(roleLabel(p.recordedRole)) : '') + '</small>' : '') + '</td>' +
         '<td class="cell-num">' + p.items.length + '</td>' +
         '<td class="cell-num">' + GMS.formatMoney(GMS.docTotal(p)) + '</td>' +
         '<td class="row-actions"><button class="btn btn-ghost btn-sm" onclick="viewPurchase(\'' + p.id + '\')">View</button></td>' +
         '</tr>';
     }).join('');
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   function escAttr(s) {
@@ -179,7 +189,7 @@ document.addEventListener('DOMContentLoaded', async function () {
       const prod = prodList.find(function (x) { return String(x.id) === String(it.productId); });
       return '- ' + (prod ? prod.name : it.productId) + '  x' + it.qty + '  @ ' + GMS.formatMoney(it.price) + (it.expiry ? '  (exp ' + GMS.formatDate(it.expiry) + ')' : '');
     }).join('\n');
-    alert('Purchase ' + p.id + '\nSupplier: ' + GMS.supplierName(p.supplierId) + '\nDate: ' + GMS.formatDate(p.date) + '\n\n' + lines + '\n\nTotal: ' + GMS.formatMoney(GMS.docTotal(p)));
+    alert('Purchase ' + p.id + '\nSupplier: ' + GMS.supplierName(p.supplierId) + '\nDate: ' + GMS.formatDate(p.date) + '\nRecorded by: ' + (p.recordedBy || '—') + (p.recordedUsername ? ' (@' + p.recordedUsername + ')' : '') + (p.recordedRole ? ' · ' + roleLabel(p.recordedRole) : '') + '\n\n' + lines + '\n\nTotal: ' + GMS.formatMoney(GMS.docTotal(p)));
   };
 
   render();

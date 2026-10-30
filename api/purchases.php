@@ -8,7 +8,12 @@ require_once __DIR__ . '/../config/db.php';
 $method = $_SERVER['REQUEST_METHOD'];
 
 function purchase_with_items(PDO $pdo, int $pid): ?array {
-    $st = $pdo->prepare('SELECT * FROM purchase WHERE purchase_id = ?');
+    $st = $pdo->prepare(
+        "SELECT p.*, COALESCE(NULLIF(u.full_name, ''), u.username) AS recorded_by,
+                u.username AS recorded_username, u.role AS recorded_role
+         FROM purchase p LEFT JOIN app_user u ON u.user_id = p.user_id
+         WHERE p.purchase_id = ?"
+    );
     $st->execute([$pid]);
     $p = $st->fetch();
     if (!$p) return null;
@@ -25,6 +30,9 @@ function purchase_with_items(PDO $pdo, int $pid): ?array {
     }
     return [
         'id' => (int)$p['purchase_id'], 'supplierId' => (int)$p['supplier_id'],
+        'recordedBy' => (string)($p['recorded_by'] ?? ''),
+        'recordedUsername' => (string)($p['recorded_username'] ?? ''),
+        'recordedRole' => (string)($p['recorded_role'] ?? ''),
         'date' => substr((string)$p['purchase_date'], 0, 10), 'items' => $items,
         'total' => round($total, 2),
     ];
@@ -48,7 +56,7 @@ try {
     if ($method === 'POST') {
         $in = json_input();
         $supplierId = v_id($in['supplierId'] ?? $in['supplier_id'] ?? 0, 'supplier');
-        $date = v_datetime($in['date'] ?? date('Y-m-d'), 'Purchase date');
+        $date = v_datetime($in['date'] ?? business_today($pdo), 'Purchase date');
         $items = $in['items'] ?? [];
         if (!is_array($items) || count($items) === 0) fail('Supplier and at least one item are required.', 422);
         if (count($items) > 200) fail('Too many items in one purchase (max 200).', 422);
@@ -86,8 +94,8 @@ try {
             else $merged[$key]['qty'] += (int)$it['qty'];
         }
         $items = array_values($merged);
-        $st = $pdo->prepare('INSERT INTO purchase (supplier_id, purchase_date) VALUES (?, ?)');
-        $st->execute([$supplierId, $date]);
+        $st = $pdo->prepare('INSERT INTO purchase (supplier_id, user_id, purchase_date) VALUES (?, ?, ?)');
+        $st->execute([$supplierId, current_user_id(), $date]);
         $pid = (int)$pdo->lastInsertId();
         $stD = $pdo->prepare('INSERT INTO purchase_detail (purchase_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)');
         // Every line is its own batch (cost + expiry preserved).

@@ -3,6 +3,9 @@
 
 function db(): PDO {
     static $pdo = null;
+    // This store's business timezone is Bangladesh; keep PHP and the MariaDB
+    // connection aligned so defaults, CURDATE(), and created_at agree.
+    date_default_timezone_set('Asia/Dhaka');
     if ($pdo instanceof PDO) return $pdo;
 
     $host = getenv('DB_HOST') ?: '127.0.0.1';
@@ -16,7 +19,14 @@ function db(): PDO {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES   => false,
     ]);
+    $pdo->exec("SET time_zone = '+06:00'");
     return $pdo;
+}
+
+function business_today(PDO $pdo): string {
+    static $today = null;
+    if ($today === null) $today = (string)$pdo->query('SELECT CURDATE()')->fetchColumn();
+    return $today;
 }
 
 function json_input(): array {
@@ -75,6 +85,21 @@ function v_name($v, string $field, int $min = 2, int $max = 200): string {
     return $s;
 }
 
+// Password rule: 8–72 characters (bcrypt's hard limit is 72 BYTES).
+// Shared by api/users.php (staff hire/edit) and api/password.php (reset flow).
+function v_password($v, bool $required): ?string {
+    if (is_array($v) || is_object($v) || $v === null) $v = '';
+    $s = (string)$v;
+    if ($s === '') {
+        if ($required) fail('Password is required.', 422);
+        return null;
+    }
+    if (preg_match('/[\x00-\x1F\x7F]/', $s)) fail('Password contains invalid characters.', 422);
+    if (mb_strlen($s) < 8) fail('Password must be at least 8 characters.', 422);
+    if (strlen($s) > 72) fail('Password is too long (max 72 characters).', 422);
+    return $s;
+}
+
 function v_username($v): string {
     $s = clean_text($v);
     if (!preg_match('/^[A-Za-z0-9._]{3,50}$/', $s)) fail('Invalid username format.', 422);
@@ -103,7 +128,7 @@ function v_email($v, string $field = 'Email'): ?string {
     return $s;
 }
 
-function v_money($v, string $field, float $min = 0.0, bool $allowZero = true): float {
+function v_money($v, string $field, float $min = 0.0, bool $allowZero = true, float $max = 99999999.99): float {
     if (is_array($v) || is_object($v) || $v === '' || $v === null || !is_numeric($v)) {
         fail("$field must be a number.", 422);
     }
@@ -112,7 +137,7 @@ function v_money($v, string $field, float $min = 0.0, bool $allowZero = true): f
     if ($f < $min || (!$allowZero && $f <= 0)) {
         fail($allowZero ? "$field cannot be negative." : "$field must be greater than zero.", 422);
     }
-    if ($f > 9999999999.99) fail("$field is too large.", 422);
+    if ($f > $max) fail("$field is too large.", 422);
     return $f;
 }
 
@@ -137,8 +162,16 @@ function v_date($v, string $field): string {
 function v_datetime($v, string $field): string {
     $s = clean_text($v);
     if (preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/', $s)) {
-        $d = new DateTime($s);
-        return $d->format('Y-m-d H:i:s');
+        if (strlen($s) === 16) $s .= ':00';
+        $d = DateTime::createFromFormat('!Y-m-d H:i:s', $s);
+        $errors = DateTime::getLastErrors();
+        if (!$d || ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0))
+            || $d->format('Y-m-d H:i:s') !== $s) {
+            fail("$field must be a valid date and time.", 422);
+        }
+        $day = substr($s, 0, 10);
+        if ($day < '2000-01-01' || $day > '2100-12-31') fail("$field is out of range.", 422);
+        return $s;
     }
     return v_date($v, $field) . ' 12:00:00';
 }
@@ -155,6 +188,8 @@ function v_id($v, string $field = 'ID'): int {
    in the PHP session: owner | manager | cashier.
    - cashier = counter only: READ product/customer/sale (+supplier/
      category names), CREATE sale + sale_payment, ADD customer.
+     A cashier may read EVERY bill and collect its due: the customer pays
+     at the counter, whoever rang up the bill.
      NO PUT/DELETE anywhere, NO inventory/purchase/expense writes,
      NO purchase-cost, expense or profit reads.
    - manager/owner: as before (all reads + writes; UI hides a few pages).
@@ -169,8 +204,16 @@ function current_role(): string {
 
 function require_login(): string {
     $role = current_role();
-    if (empty($_SESSION['username'] ?? '') || $role === '') fail('Please log in first.', 401);
+    if (empty($_SESSION['username'] ?? '') || empty($_SESSION['user_id'] ?? 0) || $role === '') {
+        fail('Please log in first.', 401);
+    }
     return $role;
+}
+
+function current_user_id(): int {
+    $id = (int)($_SESSION['user_id'] ?? 0);
+    if ($id < 1) fail('Please log in again.', 401);
+    return $id;
 }
 
 function require_roles(array $roles, string $action = 'perform this action'): string {
@@ -179,10 +222,191 @@ function require_roles(array $roles, string $action = 'perform this action'): st
     return $role;
 }
 
+function v_barcode($v): ?string {
+    if (is_array($v) || is_object($v)) fail('Barcode must be text.', 422);
+    $s = clean_text($v);
+    if ($s === '') return null;
+    if (mb_strlen($s) > 100 || preg_match('/[\\x00-\\x1F\\x7F]/', (string)$v)) {
+        fail('Barcode must be at most 100 characters and contain no control characters.', 422);
+    }
+    return $s;
+}
+
 function v_optional_date($v, string $field): ?string {
     $s = clean_text($v);
     if ($s === '') return null;
     return v_date($s, $field);
+}
+
+/* ==========================================================================
+   Login throttling. After MAX_FAILED_ATTEMPTS wrong passwords for the same
+   username inside LOCK_MINUTES, that account stops accepting logins until
+   the window clears (or an Owner/Manager unlocks it on Staff & Access).
+   Failed attempts live in `login_attempt`, created on demand so an existing
+   database keeps working without a manual migration.
+   ========================================================================== */
+
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCK_MINUTES = 15;
+
+function login_attempt_ready(PDO $pdo): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS `login_attempt` (
+              `attempt_id` int PRIMARY KEY AUTO_INCREMENT,
+              `username` varchar(100) NOT NULL,
+              `ip` varchar(45) DEFAULT NULL,
+              `success` tinyint(1) NOT NULL DEFAULT 0,
+              `attempted_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              KEY `idx_login_attempt_user` (`username`, `attempted_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    } catch (Throwable $e) { /* never block sign-in because of the throttle table */ }
+}
+
+// Wrong passwords for this username inside the lock window.
+function failed_login_attempts(PDO $pdo, string $username): int {
+    login_attempt_ready($pdo);
+    try {
+        $st = $pdo->prepare('SELECT COUNT(*) FROM login_attempt
+            WHERE username = ? AND success = 0
+              AND attempted_at > (NOW() - INTERVAL ' . LOCK_MINUTES . ' MINUTE)');
+        $st->execute([$username]);
+        return (int)$st->fetchColumn();
+    } catch (Throwable $e) { return 0; }
+}
+
+// Minutes left on the lock (0 = not locked).
+function login_lock_minutes(PDO $pdo, string $username): int {
+    login_attempt_ready($pdo);
+    try {
+        $st = $pdo->prepare('SELECT MAX(attempted_at) FROM login_attempt
+            WHERE username = ? AND success = 0
+              AND attempted_at > (NOW() - INTERVAL ' . LOCK_MINUTES . ' MINUTE)');
+        $st->execute([$username]);
+        $last = (string)$st->fetchColumn();
+        if ($last === '') return 0;
+        $unlockAt = strtotime($last) + LOCK_MINUTES * 60;
+        return max(0, (int)ceil(($unlockAt - time()) / 60));
+    } catch (Throwable $e) { return 0; }
+}
+
+function record_login_attempt(PDO $pdo, string $username, bool $ok): void {
+    login_attempt_ready($pdo);
+    try {
+        $pdo->prepare('INSERT INTO login_attempt (username, ip, success) VALUES (?, ?, ?)')
+            ->execute([mb_substr($username, 0, 100), $_SERVER['REMOTE_ADDR'] ?? null, $ok ? 1 : 0]);
+        // keep the table small: anything older than a day cannot affect a lock
+        $pdo->exec('DELETE FROM login_attempt WHERE attempted_at < (NOW() - INTERVAL 1 DAY)');
+    } catch (Throwable $e) {}
+}
+
+// A correct password (or an explicit unlock) clears the run of failures.
+function clear_login_attempts(PDO $pdo, string $username): void {
+    login_attempt_ready($pdo);
+    try { $pdo->prepare('DELETE FROM login_attempt WHERE username = ?')->execute([$username]); }
+    catch (Throwable $e) {}
+}
+
+/* ==========================================================================
+   Account audit trail (Staff & Access page). Deliberately stores names as
+   text with no foreign key, so a log row survives account deletion.
+   ========================================================================== */
+
+function staff_log_ready(PDO $pdo): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS `staff_log` (
+              `log_id` int PRIMARY KEY AUTO_INCREMENT,
+              `actor_user_id` int NOT NULL,
+              `actor_name` varchar(150) DEFAULT NULL,
+              `actor_username` varchar(100) DEFAULT NULL,
+              `actor_role` varchar(10) DEFAULT NULL,
+              `target_user_id` int DEFAULT NULL,
+              `target_name` varchar(150) DEFAULT NULL,
+              `target_username` varchar(100) DEFAULT NULL,
+              `target_role` varchar(10) DEFAULT NULL,
+              `action` varchar(20) NOT NULL,
+              `details` varchar(500) DEFAULT NULL,
+              `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              KEY `idx_staff_log_time` (`created_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    } catch (Throwable $e) {}
+}
+
+// A failed log write must never undo a change that already committed.
+function log_staff(PDO $pdo, int $actorId, string $actorName, string $actorUsername, string $actorRole,
+                   ?int $targetId, ?string $targetName, ?string $targetUsername, ?string $targetRole,
+                   string $action, string $details): void {
+    staff_log_ready($pdo);
+    try {
+        $pdo->prepare(
+            'INSERT INTO staff_log (actor_user_id, actor_name, actor_username, actor_role,
+                target_user_id, target_name, target_username, target_role, action, details)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        )->execute([$actorId, $actorName, $actorUsername, $actorRole, $targetId,
+            $targetName !== null ? mb_substr($targetName, 0, 150) : null,
+            $targetUsername !== null ? mb_substr($targetUsername, 0, 100) : null,
+            $targetRole, $action, $details !== '' ? mb_substr($details, 0, 500) : null]);
+    } catch (Throwable $e) {}
+}
+
+/* ==========================================================================
+   Password reset / approval schema, created on demand so a database imported
+   before this feature keeps working without a migration script.
+   - app_user.email: where a reset code is sent (added to older tables).
+   - password_request: a pending new password waiting for approval.
+     Only the bcrypt hash is stored, never the plain password.
+   - password_code: emailed 6-digit code, hashed, with expiry + try count.
+   ========================================================================== */
+
+function password_schema_ready(PDO $pdo): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+    try {
+        if (!$pdo->query("SHOW COLUMNS FROM app_user LIKE 'email'")->fetch()) {
+            $pdo->exec('ALTER TABLE app_user ADD COLUMN email varchar(100) DEFAULT NULL AFTER full_name');
+        }
+    } catch (Throwable $e) {}
+    try {
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS `password_request` (
+              `request_id` int PRIMARY KEY AUTO_INCREMENT,
+              `user_id` int NOT NULL,
+              `mode` varchar(10) NOT NULL DEFAULT 'change',
+              `new_password_hash` varchar(255) NOT NULL,
+              `status` varchar(12) NOT NULL DEFAULT 'pending',
+              `requested_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              `decided_by` int DEFAULT NULL,
+              `decided_at` datetime DEFAULT NULL,
+              KEY `idx_pwreq_user` (`user_id`, `status`, `requested_at`),
+              CONSTRAINT `fk_pwreq_user` FOREIGN KEY (`user_id`) REFERENCES `app_user` (`user_id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    } catch (Throwable $e) {}
+    try {
+        $pdo->exec(
+            "CREATE TABLE IF NOT EXISTS `password_code` (
+              `code_id` int PRIMARY KEY AUTO_INCREMENT,
+              `user_id` int NOT NULL,
+              `code_hash` varchar(255) NOT NULL,
+              `attempts` int NOT NULL DEFAULT 0,
+              `used` tinyint(1) NOT NULL DEFAULT 0,
+              `expires_at` datetime NOT NULL,
+              `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              KEY `idx_pwcode_user` (`user_id`, `used`, `expires_at`),
+              CONSTRAINT `fk_pwcode_user` FOREIGN KEY (`user_id`) REFERENCES `app_user` (`user_id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+    } catch (Throwable $e) {}
 }
 
 // Map a DB row -> the shape the UI (store.js) expects.
@@ -193,10 +417,18 @@ function map_category(array $r): array {
     return ['id' => (int)$r['category_id'], 'name' => $r['category_name'], 'description' => $r['description'] ?? ''];
 }
 function map_supplier(array $r): array {
-    return ['id' => (int)$r['supplier_id'], 'name' => $r['supplier_name'], 'phone' => $r['phone'] ?? '', 'address' => $r['address'] ?? ''];
+    return [
+        'id' => (int)$r['supplier_id'], 'name' => $r['supplier_name'],
+        'contactPerson' => $r['contact_person'] ?? '', 'phone' => $r['phone'] ?? '',
+        'email' => $r['email'] ?? '', 'address' => $r['address'] ?? '',
+    ];
 }
 function map_customer(array $r): array {
-    return ['id' => (int)$r['customer_id'], 'name' => $r['customer_name'], 'phone' => $r['phone'] ?? '', 'area' => $r['area'] ?? ''];
+    return [
+        'id' => (int)$r['customer_id'], 'name' => $r['customer_name'],
+        'phone' => $r['phone'] ?? '', 'email' => $r['email'] ?? '',
+        'address' => $r['address'] ?? '', 'area' => $r['area'] ?? '',
+    ];
 }
 function map_product(array $r, array $supplierIds = []): array {
     $ids = array_values(array_unique(array_map('intval', $supplierIds)));
@@ -204,6 +436,7 @@ function map_product(array $r, array $supplierIds = []): array {
         'id'          => (int)$r['product_id'],
         'name'        => $r['product_name'],
         'categoryId'  => $r['category_id'] !== null ? (int)$r['category_id'] : null,
+        'barcode'     => $r['barcode'] ?? '',
         // Option B: many-to-many sources. supplierId = first link (backward compat).
         'supplierIds' => $ids,
         'supplierId'  => count($ids) > 0 ? (int)$ids[0] : null,
@@ -291,5 +524,8 @@ function map_expense(array $r): array {
         'id' => (int)$r['expense_id'], 'category' => $r['expense_type'] ?? 'General',
         'description' => $r['description'] ?? '', 'amount' => (float)$r['amount'],
         'date' => $r['expense_date'] ? substr((string)$r['expense_date'], 0, 10) : '',
+        'recordedBy' => (string)($r['recorded_by'] ?? ''),
+        'recordedUsername' => (string)($r['recorded_username'] ?? ''),
+        'recordedRole' => (string)($r['recorded_role'] ?? ''),
     ];
 }

@@ -34,10 +34,23 @@ const GMS = (function () {
   }
 
   async function refreshAll() {
-    // Cashier never touches purchase costs / payouts / profit endpoints,
-    // so no 403 toast can appear on cashier pages. (Backend enforces too.)
+    // Resolve the server session before choosing endpoints; a fresh tab has
+    // no role in sessionStorage yet, and cashiers must not request costs.
     let role = '';
-    try { role = sessionStorage.getItem('gms_role') || ''; } catch (e) {}
+    try {
+      const res = await fetch(BASE + '/auth.php?action=me', { credentials: 'same-origin' });
+      const body = await res.json();
+      if (res.ok && body && body.ok && body.user) {
+        role = body.user.role || '';
+        sessionStorage.setItem('gms_session', body.user.username);
+        sessionStorage.setItem('gms_role', role);
+        sessionStorage.setItem('gms_role_label', body.user.role_label || '');
+        sessionStorage.setItem('gms_name', body.user.full_name || '');
+        sessionStorage.setItem('gms_email', body.user.email || '');
+      }
+    } catch (e) {}
+    // Cashier never touches purchase costs / payouts / profit endpoints.
+    // The backend also enforces these permissions.
     const all = Object.keys(cache);
     const list = role === 'cashier'
       ? all.filter(function (e) { return e !== 'purchases' && e !== 'expenses'; })
@@ -86,8 +99,56 @@ const GMS = (function () {
   const sales      = makeRepo('sales', '/sales.php');
   const expenses   = makeRepo('expenses', '/expenses.php');
 
+  /* Staff accounts (Owner / Manager only; the permission matrix lives in
+     api/users.php). Not cached — this page always wants fresh rows. */
+  const staff = {
+    all: function () { return api('/users.php'); },
+    log: function () { return api('/users.php?action=log'); },
+    add: function (data) { return api('/users.php', { method: 'POST', body: JSON.stringify(data) }); },
+    update: function (id, data) {
+      return api('/users.php?id=' + encodeURIComponent(id), { method: 'PUT', body: JSON.stringify(data) });
+    },
+    remove: function (id) {
+      return api('/users.php?id=' + encodeURIComponent(id), { method: 'DELETE' });
+    },
+    unlock: function (id) {
+      return api('/users.php?action=unlock&id=' + encodeURIComponent(id), { method: 'POST' });
+    },
+  };
+
+  /* Password change / email reset. api/password.php enforces the approval
+     rules: Owner applies instantly, Manager needs the Owner, Cashier needs
+     the Manager or Owner. */
+  const account = {
+    forgot: function (username) {
+      return api('/password.php?action=forgot', { method: 'POST', body: JSON.stringify({ username: username }) });
+    },
+    verify: function (data) {
+      return api('/password.php?action=verify', { method: 'POST', body: JSON.stringify(data) });
+    },
+    request: function (data) {
+      return api('/password.php?action=request', { method: 'POST', body: JSON.stringify(data) });
+    },
+    list: function () { return api('/password.php?action=list'); },
+    approve: function (id) {
+      return api('/password.php?action=approve&id=' + encodeURIComponent(id), { method: 'POST' });
+    },
+    reject: function (id) {
+      return api('/password.php?action=reject&id=' + encodeURIComponent(id), { method: 'POST' });
+    },
+    cancel: function (id) {
+      return api('/password.php?action=cancel&id=' + encodeURIComponent(id), { method: 'POST' });
+    },
+  };
+
   /* ---------------- formatting helpers (unchanged UI behaviour) ---------------- */
-  function todayISO() { return new Date().toISOString().slice(0, 10); }
+  function todayISO() {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(new Date());
+    const part = function (type) { return parts.find(function (item) { return item.type === type; }).value; };
+    return part('year') + '-' + part('month') + '-' + part('day');
+  }
   function formatMoney(n) {
     const num = Number(n) || 0;
     return '\u09F3' + num.toLocaleString('en-BD', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -100,9 +161,11 @@ const GMS = (function () {
   }
   function daysUntil(iso) {
     if (!iso) return null;
-    const today = new Date(todayISO() + 'T00:00:00');
-    const target = new Date(String(iso).slice(0, 10) + 'T00:00:00');
-    return Math.round((target - today) / 86400000);
+    const toUtcDay = function (date) {
+      const parts = String(date).slice(0, 10).split('-').map(Number);
+      return Date.UTC(parts[0], parts[1] - 1, parts[2]);
+    };
+    return Math.round((toUtcDay(iso) - toUtcDay(todayISO())) / 86400000);
   }
 
   /* ---------------- derived helpers (read from live cache) ---------------- */
@@ -128,8 +191,63 @@ const GMS = (function () {
     const c = cache.customers.find(function (x) { return Number(x.id) === Number(id); });
     return c ? c.name : '\u2014';
   }
+  function moneyCents(value) {
+    const scaled = (Number(value) || 0) * 100;
+    return Math.round(scaled + Number.EPSILON * Math.abs(scaled));
+  }
   function lineTotal(item) { return (Number(item.qty) || 0) * (Number(item.price) || 0); }
-  function docTotal(doc) { return (doc.items || []).reduce(function (s, it) { return s + lineTotal(it); }, 0); }
+  function docSubtotal(doc) {
+    return (doc.items || []).reduce(function (sum, item) {
+      return sum + moneyCents(item.price) * (Number(item.qty) || 0);
+    }, 0) / 100;
+  }
+  function docTotal(doc) {
+    const total = doc.total;
+    if (total !== undefined && total !== null && Number.isFinite(Number(total))) {
+      return Math.max(0, moneyCents(total)) / 100;
+    }
+    return Math.max(0, moneyCents(docSubtotal(doc)) - moneyCents(doc.discount)) / 100;
+  }
+  function docDiscount(doc) {
+    if (doc.discount !== undefined && doc.discount !== null) return Math.max(0, Number(doc.discount) || 0);
+    return Math.max(0, docSubtotal(doc) - docTotal(doc));
+  }
+  function docLines(doc) {
+    const items = doc.items || [];
+    const grossCents = items.map(function (item) {
+      return Math.max(0, moneyCents(item.price) * (Number(item.qty) || 0));
+    });
+    const subtotalCents = grossCents.reduce(function (sum, cents) { return sum + cents; }, 0);
+    const discountCents = Math.min(subtotalCents, Math.max(0, moneyCents(docDiscount(doc))));
+    const shares = grossCents.map(function (cents, index) {
+      const exact = subtotalCents > 0 ? discountCents * cents / subtotalCents : 0;
+      const base = Math.floor(exact);
+      return { index: index, grossCents: cents, discountCents: base, remainder: exact - base };
+    });
+    let remaining = discountCents - shares.reduce(function (sum, share) { return sum + share.discountCents; }, 0);
+    shares.slice().sort(function (a, b) { return b.remainder - a.remainder || a.index - b.index; })
+      .slice(0, remaining).forEach(function (share) { shares[share.index].discountCents++; });
+    return items.map(function (item, index) {
+      const share = shares[index];
+      return {
+        item: item,
+        gross: share.grossCents / 100,
+        discount: share.discountCents / 100,
+        net: (share.grossCents - share.discountCents) / 100,
+      };
+    });
+  }
+  function docPaid(doc) { return Math.max(0, Number(doc.cashReceived) || 0); }
+  function docDue(doc) {
+    const due = doc.due;
+    if (due !== undefined && due !== null && Number.isFinite(Number(due))) {
+      return Math.max(0, Number(due));
+    }
+    const laterPayments = (doc.payments || []).reduce(function (sum, payment) {
+      return sum + (Number(payment.amount) || 0);
+    }, 0);
+    return Math.max(0, docTotal(doc) - docPaid(doc) - laterPayments);
+  }
   function stockStatus(p) {
     if ((Number(p.stock) || 0) <= 0) return 'out';
     if ((Number(p.stock) || 0) <= (Number(p.reorderLevel) || 0)) return 'low';
@@ -163,7 +281,7 @@ const GMS = (function () {
       const cogs = cache.sales.reduce(function (sum, s) {
         return sum + (s.items || []).reduce(function (s2, it) {
           const c = (it.cost !== undefined && it.cost !== null) ? Number(it.cost) : priceOf(it.productId);
-          return s2 + Number(it.qty) * c;
+          return s2 + (it.costTotal !== undefined && it.costTotal !== null ? Number(it.costTotal) : Number(it.qty) * c);
         }, 0);
       }, 0);
       const grossProfit = totalSales - cogs;
@@ -259,6 +377,8 @@ const GMS = (function () {
         sessionStorage.setItem('gms_session', body.user.username);
         sessionStorage.setItem('gms_role', body.user.role || '');
         sessionStorage.setItem('gms_role_label', body.user.role_label || '');
+        sessionStorage.setItem('gms_name', body.user.full_name || '');
+        sessionStorage.setItem('gms_email', body.user.email || '');
       } catch (e) {}
       return body.user;
     },
@@ -293,15 +413,19 @@ const GMS = (function () {
               sessionStorage.setItem('gms_session', body.user.username);
               sessionStorage.setItem('gms_role', body.user.role || '');
               sessionStorage.setItem('gms_role_label', body.user.role_label || '');
+              sessionStorage.setItem('gms_name', body.user.full_name || '');
+              sessionStorage.setItem('gms_email', body.user.email || '');
             } catch (e) {}
             return;
           }
         }
       } catch (e) {}
-      // local demo fallback: allow a session flag set by the login page
-      let local = null;
-      try { local = sessionStorage.getItem('gms_session'); } catch (e) {}
-      if (!local) location.href = 'index.html';
+      try {
+        sessionStorage.removeItem('gms_session');
+        sessionStorage.removeItem('gms_role');
+        sessionStorage.removeItem('gms_role_label');
+      } catch (e) {}
+      location.href = 'index.html';
     },
   };
 
@@ -309,9 +433,10 @@ const GMS = (function () {
     ready: ready, refresh: refresh, refreshAll: refreshAll,
     validate: validate,
     categories: categories, products: products, suppliers: suppliers, customers: customers,
-    purchases: purchases, sales: sales, expenses: expenses,
+    purchases: purchases, sales: sales, expenses: expenses, staff: staff, account: account,
     categoryName: categoryName, supplierName: supplierName, supplierNames: supplierNames, customerName: customerName,
-    lineTotal: lineTotal, docTotal: docTotal, stockStatus: stockStatus,
+    lineTotal: lineTotal, docSubtotal: docSubtotal, docTotal: docTotal,
+    docDiscount: docDiscount, docLines: docLines, docPaid: docPaid, docDue: docDue, stockStatus: stockStatus,
     isExpiringSoon: isExpiringSoon, daysUntil: daysUntil,
     applyPurchaseToStock: applyPurchaseToStock, applySaleToStock: applySaleToStock,
     dashboardStats: dashboardStats, topSellingProducts: topSellingProducts,

@@ -3,13 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sign in — Sufian Store GMS</title>
+<title>Sign in · Sufian Store GMS</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<meta name="theme-color" content="#16332A">
 <link rel="stylesheet" href="css/common.css">
 <link rel="stylesheet" href="css/login.css">
 </head>
 <body class="login-page" data-page="login">
 
-  <div class="login-card">
+  <div class="login-card" id="signInCard">
     <div class="login-brand">
       <span class="mark">SUFIAN STORE</span>
       <div class="sub">Grocery Management System</div>
@@ -31,9 +33,49 @@
         <label for="remember" class="login-remember-label">Keep me signed in</label>
       </div>
       <button type="submit" class="btn btn-primary btn--block-center" id="loginBtn">SIGN IN</button>
+      <button type="button" class="login-link-btn" id="forgotLink">Forgot password?</button>
     </form>
 
     <div class="login-foot">Sufian Store &middot; Islamnagar, Gollamari, Khulna</div>
+  </div>
+
+  <!-- Forgot password: a 6-digit code is emailed, then the new password is set -->
+  <div class="login-card login-card--wide" id="resetCard" hidden>
+    <div class="login-brand">
+      <span class="mark">RESET PASSWORD</span>
+      <div class="sub">A 6-digit code is emailed to the address saved on your account.</div>
+    </div>
+
+    <div class="login-error" id="resetMsg"></div>
+
+    <div id="resetStep1">
+      <div class="field">
+        <label for="resetUsername">Username</label>
+        <input type="text" id="resetUsername" placeholder="Enter your username" autocomplete="username">
+      </div>
+      <button type="button" class="btn btn-primary btn--block-center" id="sendCodeBtn">SEND CODE</button>
+    </div>
+
+    <div id="resetStep2" hidden>
+      <div class="field">
+        <label for="resetCode">6-digit code from the email</label>
+        <input type="text" id="resetCode" inputmode="numeric" maxlength="6" placeholder="000000">
+      </div>
+      <div class="field">
+        <label for="resetPassword">New password</label>
+        <input type="password" id="resetPassword" maxlength="72" placeholder="At least 8 characters">
+      </div>
+      <div class="field">
+        <label for="resetConfirm">Repeat new password</label>
+        <input type="password" id="resetConfirm" maxlength="72" placeholder="Type it again">
+      </div>
+      <button type="button" class="btn btn-primary btn--block-center" id="verifyBtn">SET NEW PASSWORD</button>
+      <button type="button" class="login-link-btn" id="resendBtn">Send a new code</button>
+    </div>
+
+    <button type="button" class="login-link-btn" id="backToLogin">Back to sign in</button>
+
+    <div class="login-foot">Owner and Manager approvals happen on Staff &amp; Access.</div>
   </div>
 
   <script src="js/store.js"></script>
@@ -67,6 +109,131 @@
         btn.textContent = 'SIGN IN';
       }
     });
+
+    /* -------- Forgot password: emailed 6-digit code, then a new password ------
+       Owner     -> applies immediately.
+       Manager   -> waits for the Owner to approve it (Staff & Access).
+       Cashier   -> waits for the Manager or Owner to approve it. */
+    (function () {
+      var signInCard = document.getElementById('signInCard');
+      var resetCard = document.getElementById('resetCard');
+      var msgBox = document.getElementById('resetMsg');
+      var step1 = document.getElementById('resetStep1');
+      var step2 = document.getElementById('resetStep2');
+      var codeInput = document.getElementById('resetCode');
+      var sendBtn = document.getElementById('sendCodeBtn');
+      var verifyBtn = document.getElementById('verifyBtn');
+
+      function say(text, good) {
+        msgBox.textContent = text;
+        msgBox.classList.add('show');
+        msgBox.classList.toggle('is-ok', !!good);
+      }
+
+      function resetMsgBox() {
+        msgBox.textContent = '';
+        msgBox.className = 'login-error';
+      }
+
+      function showReset() {
+        signInCard.hidden = true;
+        resetCard.hidden = false;
+        resetMsgBox();
+        step1.hidden = false;
+        step2.hidden = true;
+        var nameField = document.getElementById('resetUsername');
+        if (!nameField.value) nameField.value = document.getElementById('username').value.trim();
+        codeInput.value = '';
+        document.getElementById('resetPassword').value = '';
+        document.getElementById('resetConfirm').value = '';
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = 'SET NEW PASSWORD';
+        nameField.focus();
+      }
+
+      function backToSignIn() {
+        resetCard.hidden = true;
+        signInCard.hidden = false;
+        var username = document.getElementById('resetUsername').value.trim();
+        if (username) document.getElementById('username').value = username;
+        document.getElementById('password').value = '';
+        document.getElementById('password').focus();
+      }
+
+      document.getElementById('forgotLink').addEventListener('click', showReset);
+      document.getElementById('backToLogin').addEventListener('click', backToSignIn);
+      document.getElementById('resendBtn').addEventListener('click', function () {
+        resetMsgBox();
+        step1.hidden = false;
+        step2.hidden = true;
+        sendCode();
+      });
+
+      async function sendCode() {
+        var username = document.getElementById('resetUsername').value.trim();
+        if (!username) { say('Enter your username first.'); return; }
+        sendBtn.disabled = true;
+        sendBtn.textContent = 'SENDING...';
+        try {
+          var res = await GMS.account.forgot(username);
+          say(res.message || 'If that account exists, a 6-digit code is on the way.', res.sent);
+          if (res.sent) {
+            step1.hidden = true;
+            step2.hidden = false;
+            codeInput.focus();
+          }
+        } catch (err) {
+          say(err.message || 'Could not send the code. Is the PHP server running?');
+        }
+        sendBtn.disabled = false;
+        sendBtn.textContent = 'SEND CODE';
+      }
+
+      sendBtn.addEventListener('click', sendCode);
+      document.getElementById('resetUsername').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); sendCode(); }
+      });
+
+      async function verifyCode() {
+        var username = document.getElementById('resetUsername').value.trim();
+        var code = codeInput.value.replace(/\D+/g, '');
+        var next = document.getElementById('resetPassword').value;
+        var again = document.getElementById('resetConfirm').value;
+
+        if (code.length !== 6) { say('Enter the 6-digit code from the email.'); codeInput.focus(); return; }
+        if (next.length < 8) { say('The new password needs at least 8 characters.'); return; }
+        if (next !== again) { say('The two new passwords do not match.'); return; }
+
+        verifyBtn.disabled = true;
+        verifyBtn.textContent = 'CHECKING...';
+        try {
+          var res = await GMS.account.verify({ username: username, code: code, newPassword: next });
+          say(res.message || 'Done.', true);
+          if (res.status === 'applied') {
+            verifyBtn.textContent = 'PASSWORD CHANGED';
+            document.getElementById('username').value = username;
+            setTimeout(function () {
+              backToSignIn();
+              document.getElementById('password').focus();
+            }, 1600);
+            return; // stay disabled — it worked, leave the button alone
+          }
+          verifyBtn.textContent = 'WAITING FOR APPROVAL';
+          return;
+        } catch (err) {
+          say(err.message || 'Could not change the password.');
+        }
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = 'SET NEW PASSWORD';
+      }
+
+      verifyBtn.addEventListener('click', verifyCode);
+      ['resetCode', 'resetPassword', 'resetConfirm'].forEach(function (id) {
+        document.getElementById(id).addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') { e.preventDefault(); verifyCode(); }
+        });
+      });
+    })();
 
     // If already logged in, skip straight to that role's home page.
     fetch('api/auth.php?action=me', { credentials: 'same-origin' }).then(function (r) {

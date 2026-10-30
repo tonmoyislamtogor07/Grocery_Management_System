@@ -18,22 +18,32 @@ const ROLE_MAP = [
 function public_user(array $u): array {
     $m = ROLE_MAP[$u['role']] ?? ['key' => $u['role'], 'label' => ucfirst($u['role'])];
     return ['username' => $u['username'], 'full_name' => $u['full_name'],
+            'email' => (string)($u['email'] ?? ''),
             'role' => $m['key'], 'role_label' => $m['label']];
 }
 
 $action = $_GET['action'] ?? '';
 if ($action === 'me') {
     if (!empty($_SESSION['username'])) {
-        send_json(['ok' => true, 'user' => [
-            'username' => $_SESSION['username'],
-            'full_name' => $_SESSION['full_name'] ?? '',
-            'role' => $_SESSION['role_key'] ?? '',
-            'role_label' => $_SESSION['role_label'] ?? '',
-        ]]);
+        try {
+            $st = db()->prepare('SELECT * FROM app_user WHERE username = ? LIMIT 1');
+            $st->execute([$_SESSION['username']]);
+            $account = $st->fetch();
+            if ($account && (int)$account['is_active'] === 1) {
+                $_SESSION['user_id'] = (int)$account['user_id']; // upgrade sessions created before user_id was stored
+                $_SESSION['full_name'] = $account['full_name'];
+                send_json(['ok' => true, 'user' => public_user($account)]);
+            }
+            session_unset();
+            session_destroy();
+        } catch (Throwable $e) {
+            fail('Database error: ' . $e->getMessage(), 500);
+        }
     }
     send_json(['ok' => false], 401);
 }
 if ($action === 'logout') {
+    session_unset();
     session_destroy();
     send_json(['ok' => true]);
 }
@@ -49,14 +59,36 @@ if ($wantRole !== '' && !in_array($wantRole, ['owner', 'manager', 'cashier'], tr
 }
 
 try {
-    $st = db()->prepare('SELECT * FROM app_user WHERE username = ? LIMIT 1');
+    $pdo = db();
+    login_attempt_ready($pdo);
+
+    // Locked out? MAX_FAILED_ATTEMPTS wrong passwords inside LOCK_MINUTES.
+    // Checked before the password so a locked account cannot be guessed at.
+    if (failed_login_attempts($pdo, $username) >= MAX_FAILED_ATTEMPTS) {
+        $mins = max(1, login_lock_minutes($pdo, $username));
+        fail('Too many wrong password attempts. This account is locked for about ' . $mins .
+             ' more minute(s). Ask the Owner or Manager to unlock it on Staff & Access.', 429);
+    }
+
+    $st = $pdo->prepare('SELECT * FROM app_user WHERE username = ? AND is_active = 1 LIMIT 1');
     $st->execute([$username]);
     $u = $st->fetch();
-    if (!$u || !password_verify($password, $u['password_hash'])) fail('Invalid username or password.', 401);
+    if (!$u || !password_verify($password, $u['password_hash'])) {
+        record_login_attempt($pdo, $username, false);
+        $left = MAX_FAILED_ATTEMPTS - (failed_login_attempts($pdo, $username));
+        if ($left <= 0) {
+            fail('Too many wrong password attempts. This account is locked for ' . LOCK_MINUTES .
+                 ' minutes. Ask the Owner or Manager to unlock it on Staff & Access.', 429);
+        }
+        fail('Invalid username or password. ' . $left . ' attempt(s) left before this account locks.', 401);
+    }
     $pub = public_user($u);
     if ($wantRole !== '' && $pub['role'] !== $wantRole) {
         fail('This account is not a ' . ucfirst($wantRole) . ' account. Use the ' . $pub['role_label'] . ' login instead.', 403);
     }
+    clear_login_attempts($pdo, $username); // a good password resets the run of failures
+    session_regenerate_id(true);
+    $_SESSION['user_id']    = (int)$u['user_id'];
     $_SESSION['username']   = $u['username'];
     $_SESSION['full_name']  = $u['full_name'];
     $_SESSION['role_key']   = $pub['role'];

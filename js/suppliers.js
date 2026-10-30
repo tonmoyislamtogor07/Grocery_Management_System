@@ -10,12 +10,15 @@ document.addEventListener('DOMContentLoaded', async function () {
     const term = searchTerm.toLowerCase();
     const all = await GMS.suppliers.all();
     const rows = all.filter(function (s) {
-      return s.name.toLowerCase().includes(term) || (s.phone || '').includes(term);
+      return s.name.toLowerCase().includes(term)
+        || (s.contactPerson || '').toLowerCase().includes(term)
+        || (s.phone || '').includes(term)
+        || (s.email || '').toLowerCase().includes(term);
     });
 
     const body = document.getElementById('tableBody');
     if (rows.length === 0) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="7">No suppliers found. Add a supplier to start recording purchases.</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="9">No suppliers found. Add a supplier to start recording purchases.</td></tr>';
       return;
     }
 
@@ -23,7 +26,9 @@ document.addEventListener('DOMContentLoaded', async function () {
       return '<tr>' +
         '<td class="muted-cell">' + s.id + '</td>' +
         '<td>' + s.name + '</td>' +
+        '<td>' + (s.contactPerson || '\u2014') + '</td>' +
         '<td>' + (s.phone || '\u2014') + '</td>' +
+        '<td>' + (s.email || '\u2014') + '</td>' +
         '<td>' + (s.address || '\u2014') + '</td>' +
         '<td class="cell-num">' + (s.productCount != null ? s.productCount : '\u2014') + '</td>' +
         '<td class="cell-num">' + (s.purchaseCount != null ? s.purchaseCount : '\u2014') + '</td>' +
@@ -46,20 +51,24 @@ document.addEventListener('DOMContentLoaded', async function () {
   form.addEventListener('submit', async function (e) {
     e.preventDefault();
     const name = document.getElementById('supplierName').value.trim();
+    const contactPerson = document.getElementById('supplierContactPerson').value.trim();
     const phone = document.getElementById('supplierPhone').value.trim();
+    const email = document.getElementById('supplierEmail').value.trim();
     const address = document.getElementById('supplierAddress').value.trim();
     const err = GMS.validate.name(name, 'Supplier name', 150)
+      || (contactPerson ? GMS.validate.name(contactPerson, 'Contact person', 150) : null)
       || GMS.validate.phone(phone, 'Phone')
+      || GMS.validate.email(email)
       || (address.length > 1000 ? 'Address is too long (max 1000 characters).' : null);
     if (err) { GMSApp.showToast(err, true); return; }
 
     try {
       const id = document.getElementById('supplierId').value;
       if (id) {
-        await GMS.suppliers.update(Number(id), { name: name, phone: phone, address: address });
+        await GMS.suppliers.update(Number(id), { name: name, contactPerson: contactPerson, phone: phone, email: email, address: address });
         GMSApp.showToast('Supplier updated in database.');
       } else {
-        await GMS.suppliers.add({ name: name, phone: phone, address: address });
+        await GMS.suppliers.add({ name: name, contactPerson: contactPerson, phone: phone, email: email, address: address });
         GMSApp.showToast('Supplier added to database.');
       }
       closeModal();
@@ -72,7 +81,9 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (!s) return;
     document.getElementById('supplierId').value = s.id;
     document.getElementById('supplierName').value = s.name;
+    document.getElementById('supplierContactPerson').value = s.contactPerson || '';
     document.getElementById('supplierPhone').value = s.phone || '';
+    document.getElementById('supplierEmail').value = s.email || '';
     document.getElementById('supplierAddress').value = s.address || '';
     openModal('Edit supplier');
   };

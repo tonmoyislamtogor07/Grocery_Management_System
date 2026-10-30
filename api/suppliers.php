@@ -31,11 +31,13 @@ try {
     if ($method === 'POST') {
         $in = json_input();
         $name = v_name($in['name'] ?? '', 'Supplier name', 2, 150);
+        $contactPerson = ($in['contactPerson'] ?? '') !== '' ? v_name($in['contactPerson'], 'Contact person', 2, 150) : null;
         $phone = v_phone($in['phone'] ?? '', 'Phone');
+        $email = v_email($in['email'] ?? '', 'Email');
         $address = clean_text($in['address'] ?? '');
         if (mb_strlen($address) > 1000) fail('Address is too long (max 1000 characters).', 422);
-        $st = $pdo->prepare('INSERT INTO supplier (supplier_name, phone, address) VALUES (?, ?, ?)');
-        $st->execute([$name, $phone, $address !== '' ? $address : null]);
+        $st = $pdo->prepare('INSERT INTO supplier (supplier_name, contact_person, phone, email, address) VALUES (?, ?, ?, ?, ?)');
+        $st->execute([$name, $contactPerson, $phone, $email, $address !== '' ? $address : null]);
         $id = (int)$pdo->lastInsertId();
         $st = $pdo->prepare('SELECT * FROM supplier WHERE supplier_id = ?');
         $st->execute([$id]);
@@ -45,14 +47,16 @@ try {
         $id = v_id($_GET['id'] ?? 0, 'supplier');
         $in = json_input();
         $name = v_name($in['name'] ?? '', 'Supplier name', 2, 150);
+        $contactPerson = ($in['contactPerson'] ?? '') !== '' ? v_name($in['contactPerson'], 'Contact person', 2, 150) : null;
         $phone = v_phone($in['phone'] ?? '', 'Phone');
+        $email = v_email($in['email'] ?? '', 'Email');
         $address = clean_text($in['address'] ?? '');
         if (mb_strlen($address) > 1000) fail('Address is too long (max 1000 characters).', 422);
         $st = $pdo->prepare('SELECT 1 FROM supplier WHERE supplier_id = ?');
         $st->execute([$id]);
         if (!$st->fetch()) fail('Supplier not found.', 404);
-        $pdo->prepare('UPDATE supplier SET supplier_name=?, phone=?, address=? WHERE supplier_id=?')
-            ->execute([$name, $phone, $address !== '' ? $address : null, $id]);
+        $pdo->prepare('UPDATE supplier SET supplier_name=?, contact_person=?, phone=?, email=?, address=? WHERE supplier_id=?')
+            ->execute([$name, $contactPerson, $phone, $email, $address !== '' ? $address : null, $id]);
         $st = $pdo->prepare('SELECT * FROM supplier WHERE supplier_id = ?');
         $st->execute([$id]);
         send_json(['ok' => true, 'data' => map_supplier($st->fetch())]);

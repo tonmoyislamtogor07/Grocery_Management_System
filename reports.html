@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reports � Sufian Store GMS</title>
+<title>Reports · Sufian Store GMS</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<meta name="theme-color" content="#16332A">
 <link rel="stylesheet" href="css/common.css">
 <link rel="stylesheet" href="css/reports.css">
 </head>
@@ -30,6 +32,7 @@
             <button class="btn btn-ghost btn-sm" data-tab="inventory">Low-Stock &amp; Expiry</button>
             <button class="btn btn-ghost btn-sm" data-tab="suppliers">Supplier Summary</button>
             <button class="btn btn-ghost btn-sm" data-tab="insights">Insights</button>
+            <button class="btn btn-ghost btn-sm" data-tab="staff">Staff Activity</button>
           </div>
           <div class="toolbar" id="dateFilterBar">
             <select id="periodSelect">
@@ -45,6 +48,9 @@
               <option value="all">All time</option>
             </select>
             <select id="insightMonth" style="display:none" title="YTD through month"></select>
+            <select id="staffFilter" style="display:none" aria-label="Filter staff activity by employee">
+              <option value="">All staff</option>
+            </select>
           </div>
         </div>
 

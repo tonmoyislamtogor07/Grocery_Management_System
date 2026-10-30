@@ -13,19 +13,24 @@ function bill_due(PDO $pdo, int $sid): ?array {
     $st->execute([$sid]);
     $s = $st->fetch();
     if (!$s) return null;
-    $st = $pdo->prepare('SELECT COALESCE(SUM(quantity * unit_price),0) FROM sale_detail WHERE sale_id = ?');
+    $st = $pdo->prepare('SELECT COALESCE(SUM(quantity * CAST(ROUND(unit_price * 100, 0) AS SIGNED)),0) FROM sale_detail WHERE sale_id = ?');
     $st->execute([$sid]);
-    $final = round((float)$st->fetchColumn() - (float)$s['discount'], 2);
-    $st = $pdo->prepare('SELECT COALESCE(SUM(amount),0) FROM sale_payment WHERE sale_id = ?');
+    $subtotalCents = (int)$st->fetchColumn();
+    $discountCents = (int)round((float)$s['discount'] * 100);
+    $st = $pdo->prepare('SELECT COALESCE(SUM(CAST(ROUND(amount * 100, 0) AS SIGNED)),0) FROM sale_payment WHERE sale_id = ?');
     $st->execute([$sid]);
-    $paid = round((float)$st->fetchColumn(), 2);
-    return ['final' => $final, 'paid' => $paid, 'due' => max(0, round($final - $paid, 2))];
+    $paidCents = (int)$st->fetchColumn();
+    $finalCents = $subtotalCents - $discountCents;
+    return ['final' => $finalCents / 100, 'paid' => $paidCents / 100,
+            'due' => max(0, $finalCents - $paidCents) / 100];
 }
 
 try {
     $pdo = db();
-    // Due collection happens at the counter: every role may read + record.
-    $role = require_login();
+    // Due collection happens at the counter: every role may read + record on
+    // ANY bill — the customer pays whoever is at the till, not only the
+    // person who rang the bill up.
+    require_login();
     if ($method === 'GET') {
         $sid = v_id($_GET['sale_id'] ?? $_GET['saleId'] ?? 0, 'sale');
         $st = $pdo->prepare('SELECT 1 FROM sale WHERE sale_id = ?');
@@ -42,13 +47,16 @@ try {
     if ($method === 'POST') {
         $in = json_input();
         $sid = v_id($in['sale_id'] ?? $in['saleId'] ?? 0, 'sale');
-        $amount = v_money($in['amount'] ?? null, 'Amount', 0, false); // must be > 0
-        $paidAt = v_datetime($in['date'] ?? date('Y-m-d'), 'Payment date');
+        $amount = v_money($in['amount'] ?? null, 'Amount', 0, false, 9999999999.99); // DECIMAL(12,2), must be > 0
+        $paidAt = v_datetime($in['date'] ?? business_today($pdo), 'Payment date');
         $pdo->beginTransaction();
+        $lock = $pdo->prepare('SELECT sale_id FROM sale WHERE sale_id = ? FOR UPDATE');
+        $lock->execute([$sid]);
+        if (!$lock->fetch()) { $pdo->rollBack(); fail('Sale not found.', 404); }
         $bill = bill_due($pdo, $sid);
         if ($bill === null) { $pdo->rollBack(); fail('Sale not found.', 404); }
         if ($bill['due'] <= 0) { $pdo->rollBack(); fail('This bill has no due left.', 409); }
-        if ($amount - $bill['due'] > 0.009) { $pdo->rollBack(); fail('Amount exceeds the due of ' . number_format($bill['due'], 2) . '.', 422); }
+        if ((int)round($amount * 100) > (int)round($bill['due'] * 100)) { $pdo->rollBack(); fail('Amount exceeds the due of ' . number_format($bill['due'], 2) . '.', 422); }
         $st = $pdo->prepare('INSERT INTO sale_payment (sale_id, amount, paid_at) VALUES (?, ?, ?)');
         $st->execute([$sid, $amount, $paidAt]);
         $pdo->commit();

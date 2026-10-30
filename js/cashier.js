@@ -3,12 +3,19 @@ document.addEventListener('DOMContentLoaded', async function () {
   try { await GMS.ready; } catch (e) { GMSApp.showToast('Database error: ' + e.message, true); return; }
 
   const today = GMS.todayISO();
-  const sales = (await GMS.sales.all()).filter(function (s) { return s.date === today; });
+  const allSales = await GMS.sales.all();
+  const sales = allSales.filter(function (s) { return s.date === today; });
 
   const bills = sales.length;
-  const totalSales = sales.reduce(function (s, d) { return s + GMS.docTotal(d); }, 0);
-  const cashReceived = sales.reduce(function (s, d) { return s + (Number(d.cashReceived) || 0); }, 0);
-  const due = Math.max(0, totalSales - cashReceived);
+  const totalSales = sales.reduce(function (sum, sale) { return sum + GMS.docTotal(sale); }, 0);
+  const cashReceived = allSales.reduce(function (sum, sale) {
+    if (Array.isArray(sale.payments)) {
+      return sum + sale.payments.filter(function (payment) { return payment.date === today; })
+        .reduce(function (paid, payment) { return paid + (Number(payment.amount) || 0); }, 0);
+    }
+    return sum + (sale.date === today ? GMS.docPaid(sale) : 0);
+  }, 0);
+  const due = sales.reduce(function (sum, sale) { return sum + GMS.docDue(sale); }, 0);
 
   const statCards = [
     { label: 'Total bills (today)', value: bills, accent: 'green' },
@@ -34,8 +41,8 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   body.innerHTML = rows.map(function (s) {
     const total = GMS.docTotal(s);
-    const cash = Number(s.cashReceived) || 0;
-    const d = Math.max(0, total - cash);
+    const cash = GMS.docPaid(s);
+    const d = GMS.docDue(s);
     const dueCell = d > 0
       ? '<span class="badge badge-out">' + GMS.formatMoney(d) + '</span>'
       : '<span class="badge badge-ok">Paid</span>';
@@ -47,7 +54,9 @@ document.addEventListener('DOMContentLoaded', async function () {
       '<td class="cell-num">' + GMS.formatMoney(total) + '</td>' +
       '<td class="cell-num">' + GMS.formatMoney(cash) + '</td>' +
       '<td>' + dueCell + '</td>' +
-      '<td class="row-actions"><button class="btn btn-ghost btn-sm" onclick="viewBill(\'' + s.id + '\')">View</button></td>' +
+      '<td class="row-actions">' +
+        (d > 0 ? '<a class="btn btn-primary btn-sm" href="sales.html">Collect</a>' : '') +
+        '<button class="btn btn-ghost btn-sm" onclick="viewBill(\'' + s.id + '\')">View</button></td>' +
       '</tr>';
   }).join('');
 
@@ -61,7 +70,7 @@ document.addEventListener('DOMContentLoaded', async function () {
       return '- ' + (prod ? prod.name : it.productId) + '  x' + it.qty + '  @ ' + GMS.formatMoney(it.price);
     }).join('\n');
     const total = GMS.docTotal(s);
-    const d = Math.max(0, total - (Number(s.cashReceived) || 0));
-    alert('Receipt ' + s.id + '\nCustomer: ' + GMS.customerName(s.customerId) + '\nDate: ' + GMS.formatDate(s.date) + '\n\n' + lines + '\n\nTotal: ' + GMS.formatMoney(total) + '\nCash received: ' + GMS.formatMoney(s.cashReceived) + '\nDue: ' + GMS.formatMoney(d));
+    const d = GMS.docDue(s);
+    alert('Receipt ' + s.id + '\nCustomer: ' + GMS.customerName(s.customerId) + '\nDate: ' + GMS.formatDate(s.date) + '\n\n' + lines + '\n\nDiscount: ' + GMS.formatMoney(GMS.docDiscount(s)) + '\nTotal: ' + GMS.formatMoney(total) + '\nCash received: ' + GMS.formatMoney(GMS.docPaid(s)) + '\nDue: ' + GMS.formatMoney(d));
   };
 });

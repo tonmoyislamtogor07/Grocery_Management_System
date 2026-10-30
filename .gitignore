@@ -1,0 +1,5 @@
+# Local Gmail/SMTP credentials for the password-reset code (see README).
+config/mail.local.php
+
+# Local fallback outbox: reset emails written to disk when SMTP is not set up.
+storage/

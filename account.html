@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Account · Sufian Store GMS</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<meta name="theme-color" content="#16332A">
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/account.css">
+</head>
+<body data-page="account">
+<div class="app" id="app-root">
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="eyebrow-date" id="todayDate"></div>
+        <h1 class="page-title">My Account</h1>
+        <div class="page-desc">Your sign-in details, and where to change your password.</div>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <div class="account-grid">
+        <div class="ledger-panel">
+          <div class="ledger-panel-head"><h2>Your account</h2></div>
+          <div class="ledger-panel-body">
+            <dl class="account-facts">
+              <div><dt>Name</dt><dd id="accName">—</dd></div>
+              <div><dt>Username</dt><dd id="accUsername" class="mono-cell">—</dd></div>
+              <div><dt>Role</dt><dd id="accRole">—</dd></div>
+              <div><dt>Reset email</dt><dd id="accEmail">—</dd></div>
+            </dl>
+            <p class="hint-line">
+              Name, role and email are managed by the Owner on <strong>Staff &amp; Access</strong>.
+              Your reset email is where a forgotten-password code is sent.
+            </p>
+          </div>
+        </div>
+
+        <div class="ledger-panel">
+          <div class="ledger-panel-head"><h2>Change password</h2></div>
+          <div class="ledger-panel-body">
+            <div class="notice" id="approvalNotice"></div>
+
+            <form id="passwordForm" autocomplete="off">
+              <div class="field">
+                <label for="currentPassword">Current password</label>
+                <input type="password" id="currentPassword" maxlength="72" placeholder="Your password now">
+              </div>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="newPassword">New password</label>
+                  <input type="password" id="newPassword" maxlength="72" placeholder="At least 8 characters">
+                </div>
+                <div class="field">
+                  <label for="confirmPassword">Repeat new password</label>
+                  <input type="password" id="confirmPassword" maxlength="72" placeholder="Type it again">
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary" id="saveBtn">Change password</button>
+              </div>
+            </form>
+
+            <p class="hint-line">
+              Forgot the current password? Sign out and use <strong>Forgot password?</strong> on the
+              login page — a 6-digit code is emailed to you.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="ledger-panel" id="pendingPanel" hidden>
+        <div class="ledger-panel-head"><h2>Waiting for approval</h2></div>
+        <div class="ledger-panel-body">
+          <p id="pendingText" class="pending-text"></p>
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="cancelRequestBtn">Cancel request</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+<script src="js/account.js"></script>
+</body>
+</html>

@@ -7,6 +7,11 @@ document.addEventListener('DOMContentLoaded', async function () {
   let searchTerm = '';
   let categoryFilter = '';
 
+  function roleLabel(role) {
+    const labels = { admin: 'Owner', owner: 'Owner', manager: 'Manager', staff: 'Cashier', cashier: 'Cashier' };
+    return labels[String(role || '').toLowerCase()] || role;
+  }
+
   async function renderStats() {
     const all = await GMS.expenses.all();
     const total = all.reduce(function (s, e) { return s + (Number(e.amount) || 0); }, 0);
@@ -25,19 +30,22 @@ document.addEventListener('DOMContentLoaded', async function () {
   async function render() {
     const term = searchTerm.toLowerCase();
     const all = await GMS.expenses.all();
-    let rows = all.filter(function (e) { return (e.description || '').toLowerCase().includes(term); });
+    let rows = all.filter(function (e) {
+      return (e.description || '').toLowerCase().includes(term) || String(e.recordedBy || '').toLowerCase().includes(term) || String(e.recordedUsername || '').toLowerCase().includes(term);
+    });
     if (categoryFilter) rows = rows.filter(function (e) { return e.category === categoryFilter; });
     rows = rows.slice().sort(function (a, b) { return b.date.localeCompare(a.date); });
 
     const body = document.getElementById('tableBody');
     if (rows.length === 0) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="6">No expenses found.</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="7">No expenses found.</td></tr>';
       return;
     }
     body.innerHTML = rows.map(function (e) {
       return '<tr>' +
         '<td class="muted-cell">' + e.id + '</td>' +
         '<td>' + GMS.formatDate(e.date) + '</td>' +
+        '<td>' + escapeHtml(e.recordedBy || '—') + (e.recordedUsername ? '<br><small>@' + escapeHtml(e.recordedUsername) + (e.recordedRole ? ' · ' + escapeHtml(roleLabel(e.recordedRole)) : '') + '</small>' : '') + '</td>' +
         '<td>' + e.category + '</td>' +
         '<td>' + (e.description || '\u2014') + '</td>' +
         '<td class="cell-num">' + GMS.formatMoney(e.amount) + '</td>' +
@@ -46,6 +54,10 @@ document.addEventListener('DOMContentLoaded', async function () {
           '<button class="btn btn-danger btn-sm" onclick="deleteExpense(\'' + e.id + '\')">Delete</button>' +
         '</td></tr>';
     }).join('');
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   function openModal(title) { document.getElementById('modalTitle').textContent = title; backdrop.classList.add('open'); }

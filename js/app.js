@@ -9,9 +9,9 @@
   // Dashboard (today's counter only) + billing — never profit, purchase
   // cost, expenses or sensitive reports.
   const ROLE_PAGES = {
-    owner:   ['dashboard', 'cashier', 'products', 'categories', 'purchases', 'sales', 'suppliers', 'customers', 'expenses', 'reports'],
-    manager: ['dashboard', 'cashier', 'products', 'categories', 'purchases', 'sales', 'suppliers', 'customers', 'reports'],
-    cashier: ['cashier', 'sales', 'customers', 'reports'],
+    owner:   ['dashboard', 'cashier', 'products', 'categories', 'purchases', 'sales', 'suppliers', 'customers', 'expenses', 'staff', 'reports', 'account'],
+    manager: ['dashboard', 'cashier', 'products', 'categories', 'purchases', 'sales', 'suppliers', 'customers', 'staff', 'reports', 'account'],
+    cashier: ['cashier', 'sales', 'customers', 'reports', 'account'],
   };
 
   const NAV_ITEMS = [
@@ -24,7 +24,9 @@
     { page: 'suppliers', href: 'suppliers.html', label: 'Suppliers', icon: 'building', roles: ['owner', 'manager'] },
     { page: 'customers', href: 'customers.html', label: 'Customers', icon: 'user', roles: ['owner', 'manager', 'cashier'] },
     { page: 'expenses', href: 'expenses.html', label: 'Expenses', icon: 'wallet', roles: ['owner'] },
-    { page: 'reports', href: 'reports.html', label: 'Reports', icon: 'chart', roles: ['owner', 'manager', 'cashier'] }
+    { page: 'staff', href: 'staff.html', label: 'Staff & Access', icon: 'shield', roles: ['owner', 'manager'] },
+    { page: 'reports', href: 'reports.html', label: 'Reports', icon: 'chart', roles: ['owner', 'manager', 'cashier'] },
+    { page: 'account', href: 'account.html', label: 'My Account', icon: 'key', roles: ['owner', 'manager', 'cashier'] }
   ];
 
   function allowedPages(role) {
@@ -44,7 +46,9 @@
     building: '<rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 8h1M14 8h1M9 12h1M14 12h1M9 16h1M14 16h1"/>',
     user: '<circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-3.6 3.1-6.5 7-6.5s7 2.9 7 6.5"/>',
     wallet: '<rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20"/><circle cx="17" cy="15" r="1.3"/>',
-    chart: '<path d="M4 19V9"/><path d="M11 19V4"/><path d="M18 19v-7"/><path d="M2 19h20"/>'
+    chart: '<path d="M4 19V9"/><path d="M11 19V4"/><path d="M18 19v-7"/><path d="M2 19h20"/>',
+    shield: '<path d="M12 3l7 3v6c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/>',
+    key: '<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3M17 6l2 2M14.5 8.5l2 2"/>'
   };
 
   function iconSvg(name) {

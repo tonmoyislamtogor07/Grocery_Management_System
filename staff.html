@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Staff &amp; Access · Sufian Store GMS</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<meta name="theme-color" content="#16332A">
+<link rel="stylesheet" href="css/common.css">
+<link rel="stylesheet" href="css/staff.css">
+</head>
+<body data-page="staff">
+<div class="app" id="app-root">
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <div class="eyebrow-date" id="todayDate"></div>
+        <h1 class="page-title">Staff &amp; Access</h1>
+        <div class="page-desc">Hire cashiers and managers, control who can log in, and see who changed which account.</div>
+      </div>
+      <button class="btn btn-primary" id="addBtn">+ Add staff</button>
+    </div>
+
+    <div class="content">
+
+      <div class="notice" id="roleNotice" hidden></div>
+
+      <div class="ledger-panel">
+        <div class="ledger-panel-head">
+          <h2>Team accounts</h2>
+          <div class="toolbar">
+            <input type="text" id="searchInput" class="search-input" placeholder="Search name or username...">
+          </div>
+        </div>
+        <div class="ledger-panel-body ledger-panel-body--flush">
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Name</th><th>Username</th><th>Role</th><th>Reset email</th><th>Access</th>
+                <th class="cell-num">Records</th><th>Joined</th><th></th>
+              </tr></thead>
+              <tbody id="tableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="ledger-panel" id="approvalPanel" hidden>
+        <div class="ledger-panel-head">
+          <h2>Password approvals</h2>
+          <span class="text-muted" id="approvalCount"></span>
+        </div>
+        <div class="ledger-panel-body ledger-panel-body--flush">
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th>Requested</th><th>Staff member</th><th>Role</th><th>How</th><th></th>
+              </tr></thead>
+              <tbody id="approvalBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="ledger-panel">
+        <div class="ledger-panel-head">
+          <h2>Who can do what</h2>
+        </div>
+        <div class="ledger-panel-body ledger-panel-body--flush">
+          <div class="table-wrap">
+            <table class="matrix-table">
+              <thead><tr>
+                <th>Role</th><th>Cashier add / hire</th><th>Cashier edit / deactivate</th><th>Cashier delete</th>
+              </tr></thead>
+              <tbody>
+                <tr><td><span class="role-tag role-owner">Owner</span></td><td>Yes</td><td>Yes</td><td>Yes (permanent)</td></tr>
+                <tr><td><span class="role-tag role-manager">Manager</span></td><td>Yes</td><td>Yes (cashier only)</td><td>No (deactivate only)</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <ul class="rules-list">
+            <li>A Manager can create <strong>only Cashier</strong> accounts — never a Manager or Owner account.</li>
+            <li>Accounts are <strong>deactivated</strong> rather than deleted, so old bills keep the real name on the audit trail.</li>
+            <li><strong>Permanent delete and role change stay with the Owner.</strong></li>
+            <li><strong>5 wrong passwords in a row lock that login for 15 minutes</strong> — a correct password is refused until the lock clears. Owner or Manager can unlock it here.</li>
+            <li>Every hire, edit, deactivate, unlock and delete is logged below with who did it and when.</li>
+            <li><strong>Password changes need approval:</strong> a Cashier's new password is approved by the Manager or Owner, a Manager's by the Owner, and the Owner's changes instantly.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="ledger-panel">
+        <div class="ledger-panel-head">
+          <h2>Account activity log</h2>
+        </div>
+        <div class="ledger-panel-body ledger-panel-body--flush">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>When</th><th>Done by</th><th>Action</th><th>Account</th><th>Details</th></tr></thead>
+              <tbody id="logBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">Add staff</h3>
+      <button class="modal-close" id="modalClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="staffForm" autocomplete="off">
+        <input type="hidden" id="staffId">
+        <div class="form-grid">
+          <div class="field span-2">
+            <label for="staffFullName">Full name</label>
+            <input type="text" id="staffFullName" maxlength="150" placeholder="e.g. Rahim Uddin">
+            <div class="hint">This name appears on every sale, purchase and expense they record.</div>
+          </div>
+          <div class="field">
+            <label for="staffUsername">Username</label>
+            <input type="text" id="staffUsername" maxlength="50" placeholder="e.g. rahim01">
+            <div class="hint" id="usernameHint">3–50 characters: letters, digits, dot, underscore.</div>
+          </div>
+          <div class="field">
+            <label for="staffRole">Role</label>
+            <select id="staffRole"></select>
+            <div class="hint">Cashier: counter only. Manager: everything except expenses.</div>
+          </div>
+          <div class="field span-2">
+            <label for="staffEmail">Email (for password reset codes)</label>
+            <input type="email" id="staffEmail" maxlength="100" placeholder="e.g. rahim@gmail.com">
+            <div class="hint">Optional. Without it this person cannot use “Forgot password?” on the login page.</div>
+          </div>
+          <div class="field span-2">
+            <label for="staffPassword" id="passwordLabel">Password</label>
+            <input type="password" id="staffPassword" maxlength="72" placeholder="At least 8 characters">
+            <div class="hint" id="passwordHint">The staff member can sign in with this username and password.</div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="saveBtn">Save account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="js/store.js"></script>
+<script src="js/app.js"></script>
+<script src="js/staff.js"></script>
+</body>
+</html>

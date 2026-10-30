@@ -84,13 +84,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     document.getElementById('rvReceiptId').textContent = '\u2014';
     document.getElementById('rvDate').textContent = GMS.formatDate(document.getElementById('saleDate').value || GMS.todayISO());
     document.getElementById('rvLines').innerHTML = '<div class="text-muted receipt-empty">No sale yet — totals are ৳0.00 by default.</div>';
+    document.getElementById('rvDiscount').textContent = GMS.formatMoney(0);
     document.getElementById('rvTotal').textContent = GMS.formatMoney(0);
     document.getElementById('rvCash').textContent = GMS.formatMoney(0);
     document.getElementById('rvChange').textContent = GMS.formatMoney(0);
     document.getElementById('rvDue').textContent = GMS.formatMoney(0);
   }
 
-  async function renderCompletedReceipt(sale, total) {
+  async function renderCompletedReceipt(sale, total, discount, tenderedCash) {
     const prodList = await GMS.products.all();
     const rvLines = document.getElementById('rvLines');
     rvLines.innerHTML = sale.items.map(function (it) {
@@ -100,10 +101,11 @@ document.addEventListener('DOMContentLoaded', async function () {
     }).join('');
     document.getElementById('rvReceiptId').textContent = sale.id;
     document.getElementById('rvDate').textContent = GMS.formatDate(sale.date);
+    document.getElementById('rvDiscount').textContent = GMS.formatMoney(discount);
     document.getElementById('rvTotal').textContent = GMS.formatMoney(total);
-    document.getElementById('rvCash').textContent = GMS.formatMoney(sale.cashReceived);
-    document.getElementById('rvChange').textContent = GMS.formatMoney(Math.max(0, (Number(sale.cashReceived) || 0) - total));
-    document.getElementById('rvDue').textContent = GMS.formatMoney(Math.max(0, total - (Number(sale.cashReceived) || 0)));
+    document.getElementById('rvCash').textContent = GMS.formatMoney(tenderedCash);
+    document.getElementById('rvChange').textContent = GMS.formatMoney(Math.max(0, (Number(tenderedCash) || 0) - total));
+    document.getElementById('rvDue').textContent = GMS.formatMoney(GMS.docDue(sale));
   }
 
   async function currentLines() {
@@ -119,16 +121,21 @@ document.addEventListener('DOMContentLoaded', async function () {
     return lines;
   }
 
+  function toCents(value) {
+    const scaled = (Number(value) || 0) * 100;
+    return Math.round(scaled + Number.EPSILON * Math.abs(scaled));
+  }
+
   async function recalc() {
-    let total = 0;
+    let totalCents = 0;
     lineItemsBody.querySelectorAll('tr').forEach(function (row) {
       const qty = parseFloat(row.querySelector('.line-qty').value) || 0;
       const price = parseFloat(row.querySelector('.line-price').value) || 0;
-      const lineTotal = qty * price;
-      row.querySelector('.line-total').textContent = GMS.formatMoney(lineTotal);
-      total += lineTotal;
+      const lineCents = qty * toCents(price);
+      row.querySelector('.line-total').textContent = GMS.formatMoney(lineCents / 100);
+      totalCents += lineCents;
     });
-    updateReceipt(total);
+    updateReceipt(totalCents / 100);
   }
   window.recalc = recalc;
 
@@ -142,15 +149,19 @@ document.addEventListener('DOMContentLoaded', async function () {
         return '<div class="receipt-line"><span>' + l.product.name + ' &times;' + l.qty + '</span><span>' + GMS.formatMoney(l.qty * l.price) + '</span></div>';
       }).join('');
     }
-    document.getElementById('rvTotal').textContent = GMS.formatMoney(total);
-    const cash = parseFloat(document.getElementById('cashReceived').value) || 0;
+    const discount = toCents(document.getElementById('saleDiscount').value) / 100;
+    const finalTotal = Math.max(0, toCents(total) - toCents(discount)) / 100;
+    const cash = toCents(document.getElementById('cashReceived').value) / 100;
+    document.getElementById('rvDiscount').textContent = GMS.formatMoney(discount);
+    document.getElementById('rvTotal').textContent = GMS.formatMoney(finalTotal);
     document.getElementById('rvCash').textContent = GMS.formatMoney(cash);
-    document.getElementById('rvChange').textContent = GMS.formatMoney(Math.max(0, cash - total));
-    document.getElementById('rvDue').textContent = GMS.formatMoney(Math.max(0, total - cash));
+    document.getElementById('rvChange').textContent = GMS.formatMoney(Math.max(0, cash - finalTotal));
+    document.getElementById('rvDue').textContent = GMS.formatMoney(Math.max(0, finalTotal - cash));
     document.getElementById('rvDate').textContent = GMS.formatDate(document.getElementById('saleDate').value || GMS.todayISO());
   }
 
   document.getElementById('cashReceived').addEventListener('input', function () { recalc(); });
+  document.getElementById('saleDiscount').addEventListener('input', function () { recalc(); });
   document.getElementById('saleDate').addEventListener('change', function () { recalc(); });
   document.getElementById('addLineBtn').addEventListener('click', addLineRow);
   document.getElementById('searchInput').addEventListener('input', function (e) { searchTerm = e.target.value; renderHistory(); });
@@ -171,10 +182,14 @@ document.addEventListener('DOMContentLoaded', async function () {
     const customerRaw = document.getElementById('saleCustomer').value;
     const customerId = customerRaw ? Number(customerRaw) : null;
     const date = document.getElementById('saleDate').value || GMS.todayISO();
+    const discountRaw = document.getElementById('saleDiscount').value;
+    const discount = parseFloat(discountRaw) || 0;
     const cashRaw = document.getElementById('cashReceived').value;
     const cashReceived = parseFloat(cashRaw) || 0;
 
-    let dateErr = GMS.validate.date(date, 'Sale date') || GMS.validate.money(cashRaw === '' ? 0 : cashRaw, 'Cash received');
+    let dateErr = GMS.validate.date(date, 'Sale date')
+      || GMS.validate.money(discountRaw === '' ? 0 : discountRaw, 'Discount')
+      || GMS.validate.money(cashRaw === '' ? 0 : cashRaw, 'Cash received');
     if (dateErr) { GMSApp.showToast(dateErr, true); return; }
 
     const lines = await currentLines();
@@ -192,16 +207,26 @@ document.addEventListener('DOMContentLoaded', async function () {
       return;
     }
 
-    const items = lines.map(function (l) { return { productId: l.productId, qty: l.qty, price: l.price }; });
-    const total = items.reduce(function (s, it) { return s + it.qty * it.price; }, 0);
+    const items = lines.map(function (l) {
+      return { productId: l.productId, qty: l.qty, price: toCents(l.price) / 100 };
+    });
+    const subtotalCents = items.reduce(function (sum, item) { return sum + item.qty * toCents(item.price); }, 0);
+    const discountCents = toCents(discount);
+    if (discountCents > subtotalCents) {
+      GMSApp.showToast('Discount cannot exceed the sale subtotal of ' + GMS.formatMoney(subtotalCents / 100) + '.', true);
+      return;
+    }
+    const discountAmount = discountCents / 100;
+    const total = (subtotalCents - discountCents) / 100;
+    const cashAmount = toCents(cashReceived) / 100;
 
     // Partial payment is allowed — the unpaid part stays as due.
-    const due = Math.max(0, total - cashReceived);
+    const due = Math.max(0, toCents(total) - toCents(cashAmount)) / 100;
 
     try {
       // Saved to sales + sale_details; stock auto-decreases in PHP.
-      const sale = await GMS.sales.add({ customerId: customerId, date: date, items: items, cashReceived: cashReceived });
-      renderCompletedReceipt(sale, total);
+      const sale = await GMS.sales.add({ customerId: customerId, date: date, items: items, discount: discountAmount, cashReceived: cashAmount });
+      renderCompletedReceipt(sale, GMS.docTotal(sale), GMS.docDiscount(sale), cashAmount);
       GMSApp.showToast(due > 0
         ? 'Sale saved — receipt #' + sale.id + ' with due ' + GMS.formatMoney(due) + '.'
         : 'Sale completed in database — receipt #' + sale.id + '. Stock updated.');
@@ -213,27 +238,37 @@ document.addEventListener('DOMContentLoaded', async function () {
         form.reset();
         lineItemsBody.innerHTML = '';
         document.getElementById('saleDate').value = GMS.todayISO();
+        document.getElementById('saleDiscount').value = '0';
         document.getElementById('saleCustomer').innerHTML = '<option value="">Walk-in customer</option>' + await customerOptions();
         resetReceipt();
       }, 600);
     } catch (err) { GMSApp.showToast(err.message, true); }
   });
 
+  function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function roleLabel(role) {
+    const labels = { admin: 'Owner', owner: 'Owner', manager: 'Manager', staff: 'Cashier', cashier: 'Cashier' };
+    return labels[String(role || '').toLowerCase()] || role;
+  }
+
   async function renderHistory() {
     const term = searchTerm.toLowerCase();
     const all = await GMS.sales.all();
     const rows = all
-      .filter(function (s) { return GMS.customerName(s.customerId).toLowerCase().includes(term) || String(s.id).toLowerCase().includes(term); })
+      .filter(function (s) { return GMS.customerName(s.customerId).toLowerCase().includes(term) || String(s.id).toLowerCase().includes(term) || String(s.recordedBy || '').toLowerCase().includes(term) || String(s.recordedUsername || '').toLowerCase().includes(term); })
       .sort(function (a, b) { return b.date.localeCompare(a.date) || String(b.id).localeCompare(String(a.id)); });
 
     const body = document.getElementById('historyBody');
     if (rows.length === 0) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="7">No sales recorded yet.</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="9">No sales recorded yet.</td></tr>';
       return;
     }
     body.innerHTML = rows.map(function (s) {
       const total = GMS.docTotal(s);
-      const due = Math.max(0, total - (Number(s.cashReceived) || 0));
+      const due = GMS.docDue(s);
       const dueCell = due > 0
         ? '<span class="badge badge-out">' + GMS.formatMoney(due) + '</span>'
         : '<span class="badge badge-ok">Paid</span>';
@@ -242,7 +277,9 @@ document.addEventListener('DOMContentLoaded', async function () {
         '<td class="muted-cell">' + s.id + '</td>' +
         '<td>' + GMS.customerName(s.customerId) + '</td>' +
         '<td>' + GMS.formatDate(s.date) + '</td>' +
+        '<td>' + escapeHtml(s.recordedBy || '—') + (s.recordedUsername ? '<br><small>@' + escapeHtml(s.recordedUsername) + (s.recordedRole ? ' · ' + escapeHtml(roleLabel(s.recordedRole)) : '') + '</small>' : '') + '</td>' +
         '<td class="cell-num">' + s.items.length + '</td>' +
+        '<td class="cell-num">' + GMS.formatMoney(s.discount || 0) + '</td>' +
         '<td class="cell-num">' + GMS.formatMoney(total) + '</td>' +
         '<td>' + dueCell + '</td>' +
         '<td class="row-actions">' + collectBtn + '<button class="btn btn-ghost btn-sm" onclick="viewSale(\'' + s.id + '\')">View</button></td>' +
@@ -263,7 +300,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const all = await GMS.sales.all();
     const s = all.find(function (v) { return String(v.id) === String(id); });
     if (!s) return;
-    const due = Math.max(0, GMS.docTotal(s) - (Number(s.cashReceived) || 0));
+    const due = GMS.docDue(s);
     if (due <= 0) { GMSApp.showToast('This bill has no due left.', true); return; }
     document.getElementById('collectSaleId').value = s.id;
     document.getElementById('collectTitle').textContent = 'Collect due — Receipt #' + s.id + ' (' + GMS.customerName(s.customerId) + ')';
@@ -315,19 +352,21 @@ document.addEventListener('DOMContentLoaded', async function () {
       return '- ' + (prod ? prod.name : it.productId) + '  x' + it.qty + '  @ ' + GMS.formatMoney(it.price);
     }).join('\n');
     const total = GMS.docTotal(s);
-    const due = Math.max(0, total - (Number(s.cashReceived) || 0));
+    const due = GMS.docDue(s);
     let payText = '';
     try {
       const pays = await collectPayments(s.id);
       if (pays.length > 0) payText = '\nPayments:\n' + pays.map(function (p) { return '- ' + GMS.formatMoney(p.amount) + ' on ' + GMS.formatDate(p.date); }).join('\n');
     } catch (e) {}
-    alert('Receipt ' + s.id + '\nCustomer: ' + GMS.customerName(s.customerId) + '\nDate: ' + GMS.formatDate(s.date) + '\n\n' + lines + '\n\nTotal: ' + GMS.formatMoney(total) + '\nCash received: ' + GMS.formatMoney(s.cashReceived) + '\nDue: ' + GMS.formatMoney(due) + payText);
+    alert('Receipt ' + s.id + '\nCustomer: ' + GMS.customerName(s.customerId) + '\nDate: ' + GMS.formatDate(s.date) + '\nRecorded by: ' + (s.recordedBy || '—') + (s.recordedUsername ? ' (@' + s.recordedUsername + ')' : '') + (s.recordedRole ? ' · ' + roleLabel(s.recordedRole) : '') + '\n\n' + lines + '\n\nDiscount: ' + GMS.formatMoney(GMS.docDiscount(s)) + '\nTotal: ' + GMS.formatMoney(total) + '\nCash received: ' + GMS.formatMoney(GMS.docPaid(s)) + '\nDue: ' + GMS.formatMoney(due) + payText);
   };
 
   // init — new sale starts empty, right-side receipt stays ৳0.00 by default.
   document.getElementById('saleCustomer').innerHTML = '<option value="">Walk-in customer</option>' + await customerOptions();
   document.getElementById('saleDate').value = GMS.todayISO();
+  document.getElementById('saleDiscount').value = '0';
   lineItemsBody.innerHTML = '';
   resetReceipt();
+
   renderHistory();
 });

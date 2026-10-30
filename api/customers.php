@@ -29,10 +29,13 @@ try {
         $in = json_input();
         $name = v_name($in['name'] ?? '', 'Customer name', 2, 150);
         $phone = v_phone($in['phone'] ?? '', 'Phone');
+        $email = v_email($in['email'] ?? '', 'Email');
+        $address = clean_text($in['address'] ?? '');
         $area = clean_text($in['area'] ?? '');
+        if (mb_strlen($address) > 1000) fail('Address is too long (max 1000 characters).', 422);
         if (mb_strlen($area) > 100) fail('Area is too long (max 100 characters).', 422);
-        $st = $pdo->prepare('INSERT INTO customer (customer_name, phone, area) VALUES (?, ?, ?)');
-        $st->execute([$name, $phone, $area !== '' ? $area : null]);
+        $st = $pdo->prepare('INSERT INTO customer (customer_name, phone, email, address, area) VALUES (?, ?, ?, ?, ?)');
+        $st->execute([$name, $phone, $email, $address !== '' ? $address : null, $area !== '' ? $area : null]);
         $id = (int)$pdo->lastInsertId();
         $st = $pdo->prepare('SELECT * FROM customer WHERE customer_id = ?');
         $st->execute([$id]);
@@ -43,13 +46,16 @@ try {
         $in = json_input();
         $name = v_name($in['name'] ?? '', 'Customer name', 2, 150);
         $phone = v_phone($in['phone'] ?? '', 'Phone');
+        $email = v_email($in['email'] ?? '', 'Email');
+        $address = clean_text($in['address'] ?? '');
         $area = clean_text($in['area'] ?? '');
+        if (mb_strlen($address) > 1000) fail('Address is too long (max 1000 characters).', 422);
         if (mb_strlen($area) > 100) fail('Area is too long (max 100 characters).', 422);
         $st = $pdo->prepare('SELECT 1 FROM customer WHERE customer_id = ?');
         $st->execute([$id]);
         if (!$st->fetch()) fail('Customer not found.', 404);
-        $pdo->prepare('UPDATE customer SET customer_name=?, phone=?, area=? WHERE customer_id=?')
-            ->execute([$name, $phone, $area !== '' ? $area : null, $id]);
+        $pdo->prepare('UPDATE customer SET customer_name=?, phone=?, email=?, address=?, area=? WHERE customer_id=?')
+            ->execute([$name, $phone, $email, $address !== '' ? $address : null, $area !== '' ? $area : null, $id]);
         $st = $pdo->prepare('SELECT * FROM customer WHERE customer_id = ?');
         $st->execute([$id]);
         send_json(['ok' => true, 'data' => map_customer($st->fetch())]);

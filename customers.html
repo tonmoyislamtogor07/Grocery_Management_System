@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Customers � Sufian Store GMS</title>
+<title>Customers · Sufian Store GMS</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<meta name="theme-color" content="#16332A">
 <link rel="stylesheet" href="css/common.css">
 <link rel="stylesheet" href="css/customers.css">
 </head>
@@ -30,7 +32,7 @@
         <div class="ledger-panel-body ledger-panel-body--flush">
           <div class="table-wrap">
             <table>
-              <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Area</th><th class="cell-num">Purchases made</th><th></th></tr></thead>
+              <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Email</th><th>Address</th><th>Area</th><th class="cell-num">Purchases made</th><th></th></tr></thead>
               <tbody id="tableBody"></tbody>
             </table>
           </div>
@@ -57,9 +59,19 @@
           <label for="customerPhone">Phone <span class="text-muted">(optional)</span></label>
           <input type="tel" id="customerPhone" placeholder="01XXXXXXXXX">
         </div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="customerEmail">Email <span class="text-muted">(optional)</span></label>
+            <input type="email" id="customerEmail" maxlength="100" placeholder="customer@example.com">
+          </div>
+          <div class="field">
+            <label for="customerArea">Area <span class="text-muted">(optional — for area-wise sales)</span></label>
+            <input type="text" id="customerArea" placeholder="e.g. Sonadanga" maxlength="100">
+          </div>
+        </div>
         <div class="field">
-          <label for="customerArea">Area <span class="text-muted">(optional — for area-wise sales)</span></label>
-          <input type="text" id="customerArea" placeholder="e.g. Sonadanga" maxlength="100">
+          <label for="customerAddress">Address <span class="text-muted">(optional)</span></label>
+          <input type="text" id="customerAddress" placeholder="Street, area, city" maxlength="1000">
         </div>
         <div class="form-actions">
           <button type="button" class="btn btn-ghost" id="cancelBtn">Cancel</button>

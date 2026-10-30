@@ -158,6 +158,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     e.preventDefault();
     const name = document.getElementById('productName').value;
     const categoryId = document.getElementById('productCategory').value;
+    const barcode = document.getElementById('productBarcode').value.trim();
     const priceRaw = document.getElementById('productPrice').value;
     const purchasePriceRaw = document.getElementById('productPurchasePrice').value;
     const stockRaw = document.getElementById('productStock').value;
@@ -179,7 +180,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     const reorderLevel = reorderRaw === '' ? 5 : parseInt(reorderRaw, 10);
 
     const data = {
-      name: name, categoryId: Number(categoryId), price: price, purchasePrice: purchasePrice, stock: stock,
+      name: name, categoryId: Number(categoryId), barcode: barcode, price: price, purchasePrice: purchasePrice, stock: stock,
       reorderLevel: isNaN(reorderLevel) ? 5 : reorderLevel, expiry: expiry || '',
       supplierIds: selectedSupplierIds()
     };
@@ -203,6 +204,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (!p) return;
     document.getElementById('productId').value = p.id;
     document.getElementById('productName').value = p.name;
+    document.getElementById('productBarcode').value = p.barcode || '';
     document.getElementById('productCategory').innerHTML = await categoryOptions(p.categoryId);
     document.getElementById('productPrice').value = p.price;
     document.getElementById('productPurchasePrice').value = (p.purchasePrice !== undefined && p.purchasePrice !== null) ? p.purchasePrice : p.price;

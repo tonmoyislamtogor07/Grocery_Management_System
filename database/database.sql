@@ -24,6 +24,10 @@ DROP TABLE IF EXISTS customer;
 DROP TABLE IF EXISTS supplier;
 DROP TABLE IF EXISTS category;
 DROP TABLE IF EXISTS expense;
+DROP TABLE IF EXISTS staff_log;
+DROP TABLE IF EXISTS login_attempt;
+DROP TABLE IF EXISTS password_code;
+DROP TABLE IF EXISTS password_request;
 DROP TABLE IF EXISTS app_user;
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -35,9 +39,73 @@ CREATE TABLE `app_user` (
   `username` varchar(100) NOT NULL UNIQUE,
   `password_hash` varchar(255) NOT NULL,
   `full_name` varchar(150) DEFAULT NULL,
+  -- Where a "Forgot password?" code is emailed. Optional: an account with no
+  -- email on file cannot reset its own password (the Owner can still set one).
+  `email` varchar(100) DEFAULT NULL,
   `role` enum('admin','manager','staff') NOT NULL DEFAULT 'admin',
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Account audit trail (Staff & Access page): who hired / edited /
+-- deactivated / deleted which account, and when. Deliberately stores the
+-- names as text with no foreign key, so the log survives account deletion.
+CREATE TABLE `staff_log` (
+  `log_id` int PRIMARY KEY AUTO_INCREMENT,
+  `actor_user_id` int NOT NULL,
+  `actor_name` varchar(150) DEFAULT NULL,
+  `actor_username` varchar(100) DEFAULT NULL,
+  `actor_role` varchar(10) DEFAULT NULL,
+  `target_user_id` int DEFAULT NULL,
+  `target_name` varchar(150) DEFAULT NULL,
+  `target_username` varchar(100) DEFAULT NULL,
+  `target_role` varchar(10) DEFAULT NULL,
+  `action` varchar(20) NOT NULL,
+  `details` varchar(500) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY `idx_staff_log_time` (`created_at`)
+);
+
+-- Failed sign-in log used by the login throttle: 5 wrong passwords for one
+-- username inside 15 minutes locks that account until the window clears
+-- (or an Owner/Manager unlocks it on Staff & Access).
+CREATE TABLE `login_attempt` (
+  `attempt_id` int PRIMARY KEY AUTO_INCREMENT,
+  `username` varchar(100) NOT NULL,
+  `ip` varchar(45) DEFAULT NULL,
+  `success` tinyint(1) NOT NULL DEFAULT 0,
+  `attempted_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY `idx_login_attempt_user` (`username`, `attempted_at`)
+);
+
+-- A new password waiting for approval (My Account / Forgot password).
+-- Only the bcrypt hash is stored, never the plain password, and the current
+-- password keeps working until an approver accepts it:
+--   Cashier -> Manager or Owner   Manager -> Owner   Owner -> nobody.
+CREATE TABLE `password_request` (
+  `request_id` int PRIMARY KEY AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `mode` varchar(10) NOT NULL DEFAULT 'change',
+  `new_password_hash` varchar(255) NOT NULL,
+  `status` varchar(12) NOT NULL DEFAULT 'pending',
+  `requested_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `decided_by` int DEFAULT NULL,
+  `decided_at` datetime DEFAULT NULL,
+  KEY `idx_pwreq_user` (`user_id`, `status`, `requested_at`),
+  CONSTRAINT `fk_pwreq_user` FOREIGN KEY (`user_id`) REFERENCES `app_user` (`user_id`) ON DELETE CASCADE
+);
+
+-- Emailed 6-digit reset code: hashed, 10 minutes, 5 tries, one use.
+CREATE TABLE `password_code` (
+  `code_id` int PRIMARY KEY AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `code_hash` varchar(255) NOT NULL,
+  `attempts` int NOT NULL DEFAULT 0,
+  `used` tinyint(1) NOT NULL DEFAULT 0,
+  `expires_at` datetime NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY `idx_pwcode_user` (`user_id`, `used`, `expires_at`),
+  CONSTRAINT `fk_pwcode_user` FOREIGN KEY (`user_id`) REFERENCES `app_user` (`user_id`) ON DELETE CASCADE
 );
 
 CREATE TABLE `category` (

@@ -57,6 +57,7 @@ try {
         $in = json_input();
         $name = v_name($in['name'] ?? '', 'Product name', 2, 200);
         $categoryId = v_id($in['categoryId'] ?? 0, 'category');
+        $barcode = v_barcode($in['barcode'] ?? '');
         $price = v_money($in['price'] ?? null, 'Selling price');
         $stock = v_qty($in['stock'] ?? null, 'Stock', 0);
         $reorder = v_qty($in['reorderLevel'] ?? 5, 'Reorder level', 0);
@@ -74,8 +75,8 @@ try {
         $st->execute([$categoryId]);
         if (!$st->fetch()) fail('Category not found.', 422);
         $pdo->beginTransaction();
-        $st = $pdo->prepare('INSERT INTO product (product_name, category_id, selling_price, minimum_stock) VALUES (?, ?, ?, ?)');
-        $st->execute([$name, $categoryId, $price, $reorder]);
+        $st = $pdo->prepare('INSERT INTO product (product_name, category_id, barcode, selling_price, minimum_stock) VALUES (?, ?, ?, ?, ?)');
+        $st->execute([$name, $categoryId, $barcode, $price, $reorder]);
         $id = (int)$pdo->lastInsertId();
         if (count($supplierIds) > 0) {
             $stL = $pdo->prepare('INSERT INTO product_supplier (product_id, supplier_id) VALUES (?, ?)');
@@ -98,6 +99,7 @@ try {
         if (!$old) fail('Product not found.', 404);
         $name = array_key_exists('name', $in) ? v_name($in['name'], 'Product name', 2, 200) : $old['product_name'];
         $categoryId = array_key_exists('categoryId', $in) ? v_id($in['categoryId'], 'category') : $old['category_id'];
+        $barcode = array_key_exists('barcode', $in) ? v_barcode($in['barcode']) : $old['barcode'];
         $price = array_key_exists('price', $in) ? v_money($in['price'], 'Selling price') : (float)$old['selling_price'];
         $reorder = array_key_exists('reorderLevel', $in) ? v_qty($in['reorderLevel'], 'Reorder level', 0) : (int)$old['minimum_stock'];
         $wantStock = array_key_exists('stock', $in) ? v_qty($in['stock'], 'Stock', 0) : null;
@@ -121,8 +123,8 @@ try {
             if (!$st->fetch()) fail('Category not found.', 422);
         }
         $pdo->beginTransaction();
-        $st = $pdo->prepare('UPDATE product SET product_name=?, category_id=?, selling_price=?, minimum_stock=? WHERE product_id=?');
-        $st->execute([$name, $categoryId, $price, $reorder, $id]);
+        $st = $pdo->prepare('UPDATE product SET product_name=?, category_id=?, barcode=?, selling_price=?, minimum_stock=? WHERE product_id=?');
+        $st->execute([$name, $categoryId, $barcode, $price, $reorder, $id]);
         if ($touchSuppliers) {
             $pdo->prepare('DELETE FROM product_supplier WHERE product_id = ?')->execute([$id]);
             if (count($supplierIds) > 0) {
@@ -160,8 +162,11 @@ try {
     fail('Method not allowed.', 405);
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
-    if ($e instanceof PDOException && $e->getCode() === '23000' && stripos($e->getMessage(), 'Duplicate entry') !== false && stripos($e->getMessage(), 'product_name') !== false) {
-        fail('A product with this name already exists. Open it from the list and tick the extra supplier instead.', 409);
+    if ($e instanceof PDOException && $e->getCode() === '23000' && stripos($e->getMessage(), 'Duplicate entry') !== false) {
+        if (stripos($e->getMessage(), 'product_name') !== false) {
+            fail('A product with this name already exists. Open it from the list and tick the extra supplier instead.', 409);
+        }
+        if (stripos($e->getMessage(), 'barcode') !== false) fail('This barcode is already assigned to another product.', 409);
     }
     fail('Database error: ' . $e->getMessage(), 500);
 }

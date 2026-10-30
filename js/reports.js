@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   }
 
   let activeTab = 'sales';
-  const TABS_WITH_PERIOD = ['sales', 'purchases', 'profit'];
+  const TABS_WITH_PERIOD = ['sales', 'purchases', 'profit', 'staff'];
   // Cashier gets a limited Reports view: own-counter info only (bills,
   // top sellers, stock/expiry). Profit, purchases, supplier costs, expenses
   // and Insights stay hidden (backend also blocks those endpoints with 403).
@@ -25,6 +25,16 @@ document.addEventListener('DOMContentLoaded', async function () {
         b.classList.toggle('btn-ghost', b.getAttribute('data-tab') !== 'sales');
       }
     });
+  }
+
+  function staffRoleLabel(role) {
+    const labels = { admin: 'Owner', owner: 'Owner', manager: 'Manager', staff: 'Cashier', cashier: 'Cashier' };
+    return labels[String(role || '').toLowerCase()] || role;
+  }
+
+  function staffRoleLabel(role) {
+    const labels = { admin: 'Owner', owner: 'Owner', manager: 'Manager', staff: 'Cashier', cashier: 'Cashier' };
+    return labels[String(role || '').toLowerCase()] || role;
   }
 
   function periodKey(dateStr, period) {
@@ -108,7 +118,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     };
     const saleCogs = function (s) {
       return (s.items || []).reduce(function (sum, it) {
-        // prefer the cost snapshot stored on the bill; fall back to current cost
+        // Exact per-line lot cost is authoritative; old API/cache shapes fall back to unit cost.
+        if (it.costTotal !== undefined && it.costTotal !== null) return sum + Number(it.costTotal);
         const c = (it.cost !== undefined && it.cost !== null) ? Number(it.cost) : costOf(it.productId);
         return sum + Number(it.qty) * c;
       }, 0);
@@ -155,7 +166,9 @@ document.addEventListener('DOMContentLoaded', async function () {
       ? '<tr class="empty-row"><td colspan="5">No sales recorded yet.</td></tr>'
       : top.map(function (r, i) {
           const revenue = sales.reduce(function (sum, s) {
-            return sum + s.items.filter(function (it) { return String(it.productId) === String(r.product.id); }).reduce(function (s2, it) { return s2 + it.qty * it.price; }, 0);
+            return sum + GMS.docLines(s).filter(function (line) {
+              return String(line.item.productId) === String(r.product.id);
+            }).reduce(function (lineSum, line) { return lineSum + line.net; }, 0);
           }, 0);
           return '<tr><td class="muted-cell">' + (i + 1) + '</td><td>' + r.product.name + '</td><td>' + GMS.categoryName(r.product.categoryId) + '</td><td class="cell-num">' + r.qty + '</td><td class="cell-num">' + GMS.formatMoney(revenue) + '</td></tr>';
         }).join('');
@@ -208,6 +221,104 @@ document.addEventListener('DOMContentLoaded', async function () {
     return html;
   }
 
+  async function renderStaffActivity(period) {
+    const sales = await GMS.sales.all();
+    const purchases = await GMS.purchases.all();
+    const expenses = await GMS.expenses.all();
+    const products = await GMS.products.all();
+    const selectedStaff = document.getElementById('staffFilter').value;
+    const productName = function (id) {
+      const product = products.find(function (p) { return String(p.id) === String(id); });
+      return product ? product.name : ('Product #' + id);
+    };
+    const entries = [];
+
+    sales.forEach(function (sale) {
+      entries.push({
+        date: sale.date, staff: sale.recordedBy || 'Unassigned', username: sale.recordedUsername || '', role: sale.recordedRole || '',
+        type: 'Sale', reference: 'Receipt #' + sale.id,
+        party: GMS.customerName(sale.customerId),
+        details: (sale.items || []).map(function (item) { return productName(item.productId) + ' × ' + item.qty; }).join(', '),
+        amount: GMS.docTotal(sale),
+      });
+    });
+    purchases.forEach(function (purchase) {
+      entries.push({
+        date: purchase.date, staff: purchase.recordedBy || 'Unassigned', username: purchase.recordedUsername || '', role: purchase.recordedRole || '',
+        type: 'Purchase', reference: 'Purchase #' + purchase.id,
+        party: GMS.supplierName(purchase.supplierId),
+        details: (purchase.items || []).map(function (item) { return productName(item.productId) + ' × ' + item.qty; }).join(', '),
+        amount: GMS.docTotal(purchase),
+      });
+    });
+    expenses.forEach(function (expense) {
+      entries.push({
+        date: expense.date, staff: expense.recordedBy || 'Unassigned', username: expense.recordedUsername || '', role: expense.recordedRole || '',
+        type: 'Expense', reference: 'Expense #' + expense.id,
+        party: expense.category || 'General', details: expense.description || '—', amount: Number(expense.amount) || 0,
+      });
+    });
+
+    const inPeriod = entries.filter(function (entry) {
+      return period === 'all' || periodKey(entry.date, period) === periodKey(GMS.todayISO(), period);
+    });
+    const staffAccounts = {};
+    inPeriod.forEach(function (entry) {
+      const account = entry.username || entry.staff;
+      if (!staffAccounts[account]) staffAccounts[account] = { name: entry.staff, username: entry.username, role: entry.role };
+    });
+    const accountNames = Object.keys(staffAccounts).sort();
+    const filter = document.getElementById('staffFilter');
+    const previous = selectedStaff;
+    filter.innerHTML = '<option value="">All staff</option>' + accountNames.map(function (account) {
+      const member = staffAccounts[account];
+      const label = member.name + (member.username ? ' (@' + member.username + ')' : '') + (member.role ? ' — ' + staffRoleLabel(member.role) : '');
+      return '<option value="' + escHtml(account).replace(/"/g, '&quot;').replace(/\'/g, '&#39;') + '">' + escHtml(label) + '</option>';
+    }).join('');
+    filter.value = staffAccounts[previous] ? previous : '';
+
+    const rows = inPeriod.filter(function (entry) { return !filter.value || (entry.username || entry.staff) === filter.value; })
+      .sort(function (a, b) { return b.date.localeCompare(a.date) || a.type.localeCompare(b.type); });
+    if (rows.length === 0) {
+      return '<div class="table-wrap"><table><tbody><tr class="empty-row"><td>No staff activity found for this period.</td></tr></tbody></table></div>';
+    }
+
+    const totalSales = rows.filter(function (entry) { return entry.type === 'Sale'; }).reduce(function (sum, entry) { return sum + entry.amount; }, 0);
+    const totalPurchases = rows.filter(function (entry) { return entry.type === 'Purchase'; }).reduce(function (sum, entry) { return sum + entry.amount; }, 0);
+    const totalExpenses = rows.filter(function (entry) { return entry.type === 'Expense'; }).reduce(function (sum, entry) { return sum + entry.amount; }, 0);
+    let html = '<div class="stat-row stat-row--spaced">' +
+      '<div class="stat accent-green"><div class="label">Sales (' + rows.filter(function (entry) { return entry.type === 'Sale'; }).length + ')</div><div class="value">' + GMS.formatMoney(totalSales) + '</div></div>' +
+      '<div class="stat accent-turmeric"><div class="label">Purchases (' + rows.filter(function (entry) { return entry.type === 'Purchase'; }).length + ')</div><div class="value">' + GMS.formatMoney(totalPurchases) + '</div></div>' +
+      '<div class="stat accent-red"><div class="label">Expenses (' + rows.filter(function (entry) { return entry.type === 'Expense'; }).length + ')</div><div class="value">' + GMS.formatMoney(totalExpenses) + '</div></div>' +
+      '</div>';
+    const totals = {};
+    rows.forEach(function (entry) {
+      const account = entry.username || entry.staff;
+      if (!totals[account]) totals[account] = { name: entry.staff, username: entry.username, role: entry.role, sales: 0, salesAmount: 0, purchases: 0, purchaseAmount: 0, expenses: 0, expenseAmount: 0 };
+      if (entry.type === 'Sale') { totals[account].sales++; totals[account].salesAmount += entry.amount; }
+      else if (entry.type === 'Purchase') { totals[account].purchases++; totals[account].purchaseAmount += entry.amount; }
+      else { totals[account].expenses++; totals[account].expenseAmount += entry.amount; }
+    });
+    html += Object.keys(totals).sort().map(function (account) {
+      const total = totals[account];
+      const heading = total.name + (total.username ? ' (@' + total.username + ')' : '') + (total.role ? ' — ' + staffRoleLabel(total.role) : '');
+      return '<div class="ledger-panel"><div class="ledger-panel-head"><h2>' + escHtml(heading) + '</h2></div>' +
+        '<div class="stat-row stat-row--spaced">' +
+        '<div class="stat accent-green"><div class="label">Sales (' + total.sales + ')</div><div class="value">' + GMS.formatMoney(total.salesAmount) + '</div></div>' +
+        '<div class="stat accent-turmeric"><div class="label">Purchases (' + total.purchases + ')</div><div class="value">' + GMS.formatMoney(total.purchaseAmount) + '</div></div>' +
+        '<div class="stat accent-red"><div class="label">Expenses (' + total.expenses + ')</div><div class="value">' + GMS.formatMoney(total.expenseAmount) + '</div></div>' +
+        '</div></div>';
+    }).join('');
+    html += '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Staff member / account</th><th>Activity</th><th>Reference</th><th>Customer / supplier</th><th>Items / details</th><th class="cell-num">Amount</th></tr></thead><tbody>' +
+      rows.map(function (entry) {
+        const staffLabel = entry.staff + (entry.username ? ' (@' + entry.username + ')' : '') + (entry.role ? ' · ' + staffRoleLabel(entry.role) : '');
+        return '<tr><td>' + GMS.formatDate(entry.date) + '</td><td>' + escHtml(staffLabel) + '</td><td>' + entry.type + '</td>' +
+          '<td>' + escHtml(entry.reference) + '</td><td>' + escHtml(entry.party) + '</td><td>' + escHtml(entry.details) + '</td>' +
+          '<td class="cell-num">' + GMS.formatMoney(entry.amount) + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    return html;
+  }
+
   async function render() {
     if (isCashierView && CASHIER_TABS.indexOf(activeTab) === -1) activeTab = 'sales';
     const period = document.getElementById('periodSelect').value;
@@ -218,11 +329,13 @@ document.addEventListener('DOMContentLoaded', async function () {
     document.getElementById('periodSelect').style.display = isPeriod ? '' : 'none';
     document.getElementById('insightRange').style.display = isInsights ? '' : 'none';
     document.getElementById('insightMonth').style.display = inYtd ? '' : 'none';
+    document.getElementById('staffFilter').style.display = activeTab === 'staff' ? '' : 'none';
 
     const body = document.getElementById('reportBody');
     if (activeTab === 'sales') body.innerHTML = await renderSales(period);
     else if (activeTab === 'purchases') body.innerHTML = await renderPurchases(period);
     else if (activeTab === 'profit') body.innerHTML = await renderProfit(period);
+    else if (activeTab === 'staff') body.innerHTML = await renderStaffActivity(period);
     else if (activeTab === 'topselling') body.innerHTML = await renderTopSelling();
     else if (activeTab === 'inventory') body.innerHTML = await renderInventory();
     else if (activeTab === 'suppliers') body.innerHTML = await renderSuppliers();
@@ -243,6 +356,7 @@ document.addEventListener('DOMContentLoaded', async function () {
   document.getElementById('periodSelect').addEventListener('change', render);
   document.getElementById('insightRange').addEventListener('change', render);
   document.getElementById('insightMonth').addEventListener('change', render);
+  document.getElementById('staffFilter').addEventListener('change', render);
 
   /* ================= Insights dashboard (all real DB data, inline SVG) ================= */
 
@@ -262,12 +376,22 @@ document.addEventListener('DOMContentLoaded', async function () {
     return String(Math.round(n));
   }
 
+  function businessYearMonth(date) {
+    var parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit',
+    }).formatToParts(date || new Date());
+    var part = function (type) { return parts.find(function (item) { return item.type === type; }).value; };
+    return part('year') + '-' + part('month');
+  }
+
   function lastNMonths(n) {
+    var current = businessYearMonth(new Date()).split('-').map(Number);
     var out = [];
-    var now = new Date();
     for (var i = n - 1; i >= 0; i--) {
-      var t = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      out.push(t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0'));
+      var month = current[1] - 1 - i;
+      var year = current[0] + Math.floor(month / 12);
+      month = ((month % 12) + 12) % 12;
+      out.push(year + '-' + String(month + 1).padStart(2, '0'));
     }
     return out;
   }
@@ -348,13 +472,13 @@ document.addEventListener('DOMContentLoaded', async function () {
   function ensureInsightMonth() {
     var sel = document.getElementById('insightMonth');
     if (!sel || sel.options.length > 0) return;
-    var now = new Date();
-    for (var m = 1; m <= now.getMonth() + 1; m++) {
+    var currentMonth = parseInt(businessYearMonth(new Date()).slice(5, 7), 10);
+    for (var m = 1; m <= currentMonth; m++) {
       var o = document.createElement('option');
       o.value = m; o.textContent = MON[m - 1];
       sel.appendChild(o);
     }
-    sel.value = now.getMonth() + 1;
+    sel.value = currentMonth;
   }
 
   // Plain monthly sales bars (teal) with value labels — no goals, just
@@ -419,14 +543,20 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (mode === 'last6') months = lastNMonths(6);
     else if (mode === 'ytd') {
       months = [];
-      var yy = new Date().getFullYear();
-      ytdEnd = parseInt(document.getElementById('insightMonth').value || (new Date().getMonth() + 1), 10);
+      var businessMonth = businessYearMonth(new Date());
+      var yy = parseInt(businessMonth.slice(0, 4), 10);
+      ytdEnd = parseInt(document.getElementById('insightMonth').value || businessMonth.slice(5, 7), 10);
       for (var m = 1; m <= ytdEnd; m++) months.push(yy + '-' + String(m).padStart(2, '0'));
     } else if (mode === 'all') {
       var set = {};
       sales.forEach(function (s) { if (s.date) set[String(s.date).slice(0, 7)] = 1; });
       expenses.forEach(function (e) { if (e.date) set[String(e.date).slice(0, 7)] = 1; });
-      months = Object.keys(set).sort().slice(-24);
+      sales.forEach(function (s) {
+        (s.payments || []).forEach(function (payment) {
+          if (payment.date) set[String(payment.date).slice(0, 7)] = 1;
+        });
+      });
+      months = Object.keys(set).sort();
     } else months = lastNMonths(12);
 
     if (months.length === 0) {
@@ -441,12 +571,20 @@ document.addEventListener('DOMContentLoaded', async function () {
     months.forEach(function (k) { rev[k] = 0; cogs[k] = 0; exp[k] = 0; bills[k] = 0; collected[k] = 0; });
     sales.forEach(function (s) {
       var k = String(s.date || '').slice(0, 7);
+      if (Array.isArray(s.payments)) {
+        s.payments.forEach(function (payment) {
+          var paidMonth = String(payment.date || '').slice(0, 7);
+          if (paidMonth in collected) collected[paidMonth] += Number(payment.amount) || 0;
+        });
+      } else if (k in collected) {
+        collected[k] += Number(s.cashReceived) || 0;
+      }
       if (!(k in rev)) return;
       var t = GMS.docTotal(s);
       rev[k] += t;
       bills[k] += 1;
-      collected[k] += Number(s.cashReceived) || 0;
       cogs[k] += (s.items || []).reduce(function (sum, it) {
+        if (it.costTotal !== undefined && it.costTotal !== null) return sum + Number(it.costTotal);
         var c = (it.cost !== undefined && it.cost !== null) ? Number(it.cost) : costOf(it.productId);
         return sum + Number(it.qty) * c;
       }, 0);
@@ -456,9 +594,12 @@ document.addEventListener('DOMContentLoaded', async function () {
       if (k in exp) exp[k] += Number(e.amount) || 0;
     });
 
-    var tRev = 0, tCogs = 0, tExp = 0, tBills = 0, tColl = 0, lyRev = 0;
+    var tRev = 0, tCogs = 0, tExp = 0, tBills = 0, tColl = 0, tDue = 0, lyRev = 0;
     months.forEach(function (k) {
       tRev += rev[k]; tCogs += cogs[k]; tExp += exp[k]; tBills += bills[k]; tColl += collected[k];
+      sales.forEach(function (s) {
+        if (String(s.date || '').slice(0, 7) === k) tDue += GMS.docDue(s);
+      });
       var ly = (parseInt(k.slice(0, 4), 10) - 1) + k.slice(4);
       sales.forEach(function (s) {
         if (String(s.date || '').slice(0, 7) === ly) lyRev += GMS.docTotal(s);
@@ -467,7 +608,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     var gross = tRev - tCogs, net = gross - tExp;
     var margin = tRev > 0 ? gross / tRev * 100 : 0;
     var collPct = tRev > 0 ? tColl / tRev * 100 : 100;
-    var due = Math.max(0, tRev - tColl);
+    var due = tDue;
     var yoy = lyRev > 0 ? (tRev - lyRev) / lyRev * 100 : null;
 
     var lySet = {};
@@ -479,7 +620,7 @@ document.addEventListener('DOMContentLoaded', async function () {
       return (rev[k] - prev) / prev;
     });
 
-    var catTotals = {}, catLY = {}, lyCogs = 0, walkRev = 0, regRev = 0, areaRev = {}, areaLY = {};
+    var catTotals = {}, catLY = {}, walkRev = 0, regRev = 0, areaRev = {}, areaLY = {};
     sales.forEach(function (s) {
       var k = String(s.date || '').slice(0, 7);
       var t = GMS.docTotal(s);
@@ -489,18 +630,18 @@ document.addEventListener('DOMContentLoaded', async function () {
         if (s.customerId) regRev += t; else walkRev += t;
       }
       if (!!lySet[k]) areaLY[ar] = (areaLY[ar] || 0) + t;
-      (s.items || []).forEach(function (it) {
+      GMS.docLines(s).forEach(function (line) {
+        var it = line.item;
         var p = products.find(function (x) { return String(x.id) === String(it.productId); });
-        var line = Number(it.qty) * Number(it.price);
         if (months.indexOf(k) !== -1) {
           var c = p ? GMS.categoryName(p.categoryId) : '—';
-          catTotals[c] = (catTotals[c] || 0) + line;
+          catTotals[c] = (catTotals[c] || 0) + line.net;
         }
         if (!!lySet[k]) {
           var c2 = p ? GMS.categoryName(p.categoryId) : '—';
-          catLY[c2] = (catLY[c2] || 0) + line;
+          catLY[c2] = (catLY[c2] || 0) + line.net;
           var cc = (it.cost !== undefined && it.cost !== null) ? Number(it.cost) : costOf(it.productId);
-          lyCogs += Number(it.qty) * cc;
+          // COGS is computed from exact lot costs in the main range above.
         }
       });
     });
@@ -512,10 +653,11 @@ document.addEventListener('DOMContentLoaded', async function () {
     sales.forEach(function (s) {
       var k = String(s.date || '').slice(0, 7);
       if (months.indexOf(k) === -1) return;
-      (s.items || []).forEach(function (it) {
+      GMS.docLines(s).forEach(function (line) {
+        var it = line.item;
         var p = products.find(function (x) { return String(x.id) === String(it.productId); });
         var n = p ? p.name : ('#' + it.productId);
-        prodTotals[n] = (prodTotals[n] || 0) + Number(it.qty) * Number(it.price);
+        prodTotals[n] = (prodTotals[n] || 0) + line.net;
       });
     });
     var topRows = Object.keys(prodTotals).map(function (n, i) {

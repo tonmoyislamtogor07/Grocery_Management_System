@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Products � Sufian Store GMS</title>
+<title>Products · Sufian Store GMS</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<meta name="theme-color" content="#16332A">
 <link rel="stylesheet" href="css/common.css">
 <link rel="stylesheet" href="css/products.css">
 </head>
@@ -69,6 +71,10 @@
           <input type="text" id="productName" placeholder="e.g. Miniket Rice (25kg)">
         </div>
         <div class="form-grid">
+          <div class="field">
+            <label for="productBarcode">Barcode <span class="text-muted">(optional)</span></label>
+            <input type="text" id="productBarcode" maxlength="100" placeholder="Scan or enter barcode">
+          </div>
           <div class="field">
             <label for="productCategory">Category</label>
             <select id="productCategory"></select>

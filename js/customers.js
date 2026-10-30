@@ -10,12 +10,16 @@ document.addEventListener('DOMContentLoaded', async function () {
     const term = searchTerm.toLowerCase();
     const all = await GMS.customers.all();
     const rows = all.filter(function (c) {
-      return c.name.toLowerCase().includes(term) || (c.phone || '').includes(term) || (c.area || '').toLowerCase().includes(term);
+      return c.name.toLowerCase().includes(term)
+        || (c.phone || '').includes(term)
+        || (c.email || '').toLowerCase().includes(term)
+        || (c.address || '').toLowerCase().includes(term)
+        || (c.area || '').toLowerCase().includes(term);
     });
 
     const body = document.getElementById('tableBody');
     if (rows.length === 0) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="6">No customers found. Walk-in sales don\'t need a customer record.</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="8">No customers found. Walk-in sales don\'t need a customer record.</td></tr>';
       return;
     }
 
@@ -29,6 +33,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         '<td class="muted-cell">' + c.id + '</td>' +
         '<td>' + c.name + '</td>' +
         '<td>' + (c.phone || '\u2014') + '</td>' +
+        '<td>' + (c.email || '\u2014') + '</td>' +
+        '<td>' + (c.address || '\u2014') + '</td>' +
         '<td>' + (c.area || '\u2014') + '</td>' +
         '<td class="cell-num">' + (c.purchaseCount != null ? c.purchaseCount : '\u2014') + '</td>' +
         '<td class="row-actions">' + actions + '</td></tr>';
@@ -48,19 +54,23 @@ document.addEventListener('DOMContentLoaded', async function () {
     e.preventDefault();
     const name = document.getElementById('customerName').value.trim();
     const phone = document.getElementById('customerPhone').value.trim();
+    const email = document.getElementById('customerEmail').value.trim();
+    const address = document.getElementById('customerAddress').value.trim();
     const area = document.getElementById('customerArea').value.trim();
     const err = GMS.validate.name(name, 'Customer name', 150)
       || GMS.validate.phone(phone, 'Phone')
+      || GMS.validate.email(email)
+      || (address.length > 1000 ? 'Address is too long (max 1000 characters).' : null)
       || (area.length > 100 ? 'Area is too long (max 100 characters).' : null);
     if (err) { GMSApp.showToast(err, true); return; }
 
     try {
       const id = document.getElementById('customerId').value;
       if (id) {
-        await GMS.customers.update(Number(id), { name: name, phone: phone, area: area });
+        await GMS.customers.update(Number(id), { name: name, phone: phone, email: email, address: address, area: area });
         GMSApp.showToast('Customer updated in database.');
       } else {
-        await GMS.customers.add({ name: name, phone: phone, area: area });
+        await GMS.customers.add({ name: name, phone: phone, email: email, address: address, area: area });
         GMSApp.showToast('Customer added to database.');
       }
       closeModal();
@@ -75,6 +85,8 @@ document.addEventListener('DOMContentLoaded', async function () {
     document.getElementById('customerId').value = c.id;
     document.getElementById('customerName').value = c.name;
     document.getElementById('customerPhone').value = c.phone || '';
+    document.getElementById('customerEmail').value = c.email || '';
+    document.getElementById('customerAddress').value = c.address || '';
     document.getElementById('customerArea').value = c.area || '';
     openModal('Edit customer');
   };
