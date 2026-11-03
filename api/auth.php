@@ -4,9 +4,26 @@
 // and returns its role itself (admin -> owner, manager -> manager,
 // staff -> cashier); an optional `role` field, when sent, must match the
 // account's role or login is rejected with 403.
+// Session cookie is a browser-session cookie (lifetime 0): nothing is kept on
+// disk once the browser is closed, and signing out clears the cookie too.
+ini_set('session.use_strict_mode', '1');
+ini_set('session.use_only_cookies', '1');
+ini_set('session.cookie_lifetime', '0');
 session_start();
 header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store');
 require_once __DIR__ . '/../config/db.php';
+
+// Fully end the login: clear the server session AND expire the cookie, so a
+// reload cannot walk back in with the old session id.
+function end_session(): void {
+    $_SESSION = [];
+    if (ini_get('session.use_cookies')) {
+        $p = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'], $p['secure'], $p['httponly']);
+    }
+    @session_destroy();
+}
 
 // DB enum value => login-screen key + display label.
 const ROLE_MAP = [
@@ -19,7 +36,10 @@ function public_user(array $u): array {
     $m = ROLE_MAP[$u['role']] ?? ['key' => $u['role'], 'label' => ucfirst($u['role'])];
     return ['username' => $u['username'], 'full_name' => $u['full_name'],
             'email' => (string)($u['email'] ?? ''),
-            'role' => $m['key'], 'role_label' => $m['label']];
+            'phone' => (string)($u['phone'] ?? ''),
+            'role' => $m['key'], 'role_label' => $m['label'],
+            // true while an administrator's temporary password is still in use
+            'must_change_password' => ((int)($u['must_change_password'] ?? 0) === 1)];
 }
 
 $action = $_GET['action'] ?? '';
@@ -32,10 +52,10 @@ if ($action === 'me') {
             if ($account && (int)$account['is_active'] === 1) {
                 $_SESSION['user_id'] = (int)$account['user_id']; // upgrade sessions created before user_id was stored
                 $_SESSION['full_name'] = $account['full_name'];
+                $_SESSION['must_change_password'] = ((int)($account['must_change_password'] ?? 0) === 1) ? 1 : 0;
                 send_json(['ok' => true, 'user' => public_user($account)]);
             }
-            session_unset();
-            session_destroy();
+            end_session();
         } catch (Throwable $e) {
             fail('Database error: ' . $e->getMessage(), 500);
         }
@@ -43,8 +63,7 @@ if ($action === 'me') {
     send_json(['ok' => false], 401);
 }
 if ($action === 'logout') {
-    session_unset();
-    session_destroy();
+    end_session();
     send_json(['ok' => true]);
 }
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Use POST with {username, password, role}.', 405);
@@ -93,6 +112,7 @@ try {
     $_SESSION['full_name']  = $u['full_name'];
     $_SESSION['role_key']   = $pub['role'];
     $_SESSION['role_label'] = $pub['role_label'];
+    $_SESSION['must_change_password'] = $pub['must_change_password'] ? 1 : 0;
     send_json(['ok' => true, 'user' => $pub]);
 } catch (Throwable $e) {
     fail('Database error: ' . $e->getMessage(), 500);

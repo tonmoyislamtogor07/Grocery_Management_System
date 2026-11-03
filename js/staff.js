@@ -11,11 +11,13 @@ document.addEventListener('DOMContentLoaded', async function () {
   const ACTION_LABEL = {
     created: 'Hired', updated: 'Edited', role_changed: 'Role changed',
     activated: 'Reactivated', deactivated: 'Deactivated', deleted: 'Deleted',
-    password_reset: 'Password reset', unlocked: 'Unlocked'
+    password_reset: 'Password reset', unlocked: 'Unlocked',
+    password_changed: 'Password changed', profile_updated: 'Contact updated'
   };
   const ACTION_BADGE = {
     created: 'badge-ok', activated: 'badge-ok', unlocked: 'badge-ok',
     updated: 'badge-low', role_changed: 'badge-low', password_reset: 'badge-low',
+    password_changed: 'badge-low', profile_updated: 'badge-low',
     deactivated: 'badge-out', deleted: 'badge-out'
   };
 
@@ -68,7 +70,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     const body = document.getElementById('tableBody');
     if (rows.length === 0) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="8">' +
+      body.innerHTML = '<tr class="empty-row"><td colspan="9">' +
         (accounts.length === 0 ? 'No staff accounts yet. Use “Add staff” to hire your first cashier.' : 'No accounts match your search.') +
         '</td></tr>';
       return;
@@ -81,14 +83,20 @@ document.addEventListener('DOMContentLoaded', async function () {
         '<td>' + roleTag(s.role) + '</td>' +
         '<td class="muted-cell">' + (s.email
           ? esc(s.email)
-          : '<span class="text-muted" title="No email on file: this account cannot use “Forgot password?”.">no email</span>') + '</td>' +
+          : '<span class="text-muted" title="No email on file: this account cannot use “Forgot password?” until they add one on My Account.">no email</span>') + '</td>' +
+        '<td class="muted-cell">' + (s.phone ? esc(s.phone) : '<span class="text-muted">no phone</span>') + '</td>' +
         '<td><span class="badge ' + (s.isActive ? 'badge-ok' : 'badge-out') + '">' + (s.isActive ? 'Active' : 'Deactivated') + '</span>' +
-          lockBadge(s) + '</td>' +
+          lockBadge(s) + tempBadge(s) + '</td>' +
         '<td class="cell-num">' + (s.activity || 0) + '</td>' +
         '<td class="muted-cell">' + (s.createdAt ? GMS.formatDate(s.createdAt) : '\u2014') + '</td>' +
         '<td>' + rowActions(s) + '</td>' +
         '</tr>';
     }).join('');
+  }
+
+  function tempBadge(s) {
+    if (!s.mustChangePassword) return '';
+    return ' <span class="badge badge-low" title="A temporary password is still in use. They must set their own on My Account.">temp password</span>';
   }
 
   function lockBadge(s) {
@@ -137,49 +145,12 @@ document.addEventListener('DOMContentLoaded', async function () {
     }).join('');
   }
 
-  /* ---------------- password approvals (Manager / Owner) ---------------- */
-  function renderApprovals(sec) {
-    const panel = document.getElementById('approvalPanel');
-    if (!sec || (sec.role !== 'owner' && sec.role !== 'manager')) { panel.hidden = true; return; }
-    panel.hidden = false;
-
-    const rows = sec.pending || [];
-    document.getElementById('approvalCount').textContent = rows.length
-      ? rows.length + (rows.length === 1 ? ' request waiting' : ' requests waiting')
-      : '';
-
-    const body = document.getElementById('approvalBody');
-    if (rows.length === 0) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="5">No password change is waiting for you.</td></tr>';
-      return;
-    }
-    body.innerHTML = rows.map(function (r) {
-      const mine = r.username === myUsername;
-      return '<tr>' +
-        '<td class="muted-cell">' + formatWhen(r.requestedAt) + '</td>' +
-        '<td>' + esc(r.fullName || '\u2014') +
-          '<div class="sub-line mono-cell">@' + esc(r.username) + '</div></td>' +
-        '<td>' + roleTag(r.role) + '</td>' +
-        '<td class="muted-cell">' + (r.mode === 'forgot'
-          ? 'Forgot password \u00b7 emailed code'
-          : 'Signed in \u00b7 current password') + '</td>' +
-        '<td>' + (mine
-          ? '<span class="text-muted">Your own request</span>'
-          : '<div class="row-actions">' +
-              '<button class="btn btn-primary btn-sm" data-approve="' + r.id + '">Approve</button>' +
-              '<button class="btn btn-ghost btn-sm" data-reject="' + r.id + '">Reject</button>' +
-            '</div>') + '</td>' +
-        '</tr>';
-    }).join('');
-  }
-
   async function load() {
     try {
-      const results = await Promise.all([GMS.staff.all(), GMS.staff.log(), GMS.account.list()]);
+      const results = await Promise.all([GMS.staff.all(), GMS.staff.log()]);
       accounts = results[0] || [];
       renderAccounts();
       renderLog(results[1] || []);
-      renderApprovals(results[2] || null);
     } catch (err) {
       GMSApp.showToast(err.message, true);
     }
@@ -216,8 +187,10 @@ document.addEventListener('DOMContentLoaded', async function () {
     username.readOnly = false;
     document.getElementById('usernameHint').textContent = '3\u201350 characters: letters, digits, dot, underscore.';
     document.getElementById('staffEmail').value = '';
+    document.getElementById('staffPhone').value = '';
     document.getElementById('passwordLabel').textContent = 'Password';
-    document.getElementById('passwordHint').textContent = 'They sign in with this username and password.';
+    document.getElementById('passwordHint').textContent =
+      '8\u201372 characters with an uppercase letter, a lowercase letter, a number and a symbol.';
     fillRoles('cashier', myRole === 'manager');
     openModal(myRole === 'manager' ? 'Hire a cashier' : 'Add staff');
     document.getElementById('staffFullName').focus();
@@ -232,9 +205,12 @@ document.addEventListener('DOMContentLoaded', async function () {
     username.value = s.username;
     username.readOnly = true;
     document.getElementById('staffEmail').value = s.email || '';
+    document.getElementById('staffPhone').value = s.phone || '';
     document.getElementById('usernameHint').textContent = 'Username cannot be changed \u2014 it is the login and marks their history.';
-    document.getElementById('passwordLabel').textContent = 'New password (optional)';
-    document.getElementById('passwordHint').textContent = 'Leave blank to keep the current password.';
+    document.getElementById('passwordLabel').textContent = 'Temporary password (optional)';
+    document.getElementById('passwordHint').textContent = isSelf(s)
+      ? 'Leave blank to keep your current password. Otherwise: 8\u201372 characters with uppercase, lowercase, a number and a symbol.'
+      : 'Leave blank to leave their password alone. If you set one, it is a TEMPORARY password: they must choose their own on My Account before the rest of the system unlocks.';
     fillRoles(s.role, s.role === 'owner' || myRole !== 'owner');
     openModal('Edit ' + (s.fullName || ('@' + s.username)));
     document.getElementById('staffFullName').focus();
@@ -292,30 +268,13 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
   });
 
-  document.getElementById('approvalBody').addEventListener('click', async function (e) {
-    const btn = e.target.closest('button[data-approve], button[data-reject]');
-    if (!btn || btn.disabled) return;
-    const approveId = btn.getAttribute('data-approve');
-    const rejectId = btn.getAttribute('data-reject');
-    const id = Number(approveId || rejectId);
-    if (rejectId && !confirm('Reject this password change? The old password keeps working.')) return;
-    btn.disabled = true;
-    try {
-      const res = approveId ? await GMS.account.approve(id) : await GMS.account.reject(id);
-      GMSApp.showToast((res && res.message) || 'Done.');
-      await load();
-    } catch (err) {
-      GMSApp.showToast(err.message, true);
-      btn.disabled = false;
-    }
-  });
-
   form.addEventListener('submit', async function (e) {
     e.preventDefault();
     const id = document.getElementById('staffId').value;
     const fullName = document.getElementById('staffFullName').value.trim();
     const username = document.getElementById('staffUsername').value.trim();
     const email = document.getElementById('staffEmail').value.trim();
+    const phone = document.getElementById('staffPhone').value.trim();
     const password = document.getElementById('staffPassword').value;
     const roleValue = roleSelect.value;
 
@@ -323,15 +282,16 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (!err && email !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
       err = 'Enter a valid email address (or leave it blank).';
     }
+    if (!err) err = GMS.validate.phone(phone, 'Phone', false);
     if (!err && !id) {
       if (!/^[A-Za-z0-9._]{3,50}$/.test(username)) {
         err = 'Username must be 3\u201350 characters: letters, digits, dot or underscore.';
-      } else if (password.length < 8) {
-        err = 'Password must be at least 8 characters.';
+      } else {
+        err = GMS.validate.password(password);
       }
     }
-    if (!err && id && password !== '' && password.length < 8) {
-      err = 'New password must be at least 8 characters.';
+    if (!err && id && password !== '') {
+      err = GMS.validate.password(password);
     }
     if (err) { GMSApp.showToast(err, true); return; }
 
@@ -339,12 +299,16 @@ document.addEventListener('DOMContentLoaded', async function () {
     saveBtn.disabled = true;
     try {
       if (id) {
-        const payload = { fullName: fullName, role: roleValue, email: email };
+        const payload = { fullName: fullName, role: roleValue, email: email, phone: phone };
         if (password !== '') payload.password = password;
-        await GMS.staff.update(Number(id), payload);
-        GMSApp.showToast('Account updated.');
+        const saved = await GMS.staff.update(Number(id), payload);
+        if (password !== '' && saved && saved.mustChangePassword) {
+          GMSApp.showToast('Temporary password set \u2014 give it to them now. They must choose their own on My Account before anything else opens.');
+        } else {
+          GMSApp.showToast('Account updated.');
+        }
       } else {
-        await GMS.staff.add({ fullName: fullName, username: username, email: email, password: password, role: roleValue });
+        await GMS.staff.add({ fullName: fullName, username: username, email: email, phone: phone, password: password, role: roleValue });
         GMSApp.showToast((ROLE_LABEL[roleValue] || 'Staff') + ' account created \u2014 they can sign in now.');
       }
       closeModal();

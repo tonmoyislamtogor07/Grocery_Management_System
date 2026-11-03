@@ -121,6 +121,11 @@
       GMS.session.requireLogin().then(function () {
         const page = document.body.getAttribute('data-page');
         const role = GMS.session.role() || 'owner';
+        // A temporary password set by an administrator must be replaced first.
+        if (GMS.session.mustChange() && page !== 'account') {
+          location.href = 'account.html';
+          return;
+        }
         if (!pageAllowed(page, role)) {
           location.href = GMS.session.home();
           return;

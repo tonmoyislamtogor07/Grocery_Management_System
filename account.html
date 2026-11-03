@@ -16,69 +16,55 @@
       <div>
         <div class="eyebrow-date" id="todayDate"></div>
         <h1 class="page-title">My Account</h1>
-        <div class="page-desc">Your sign-in details, and where to change your password.</div>
+        <div class="page-desc">Your sign-in details, your password and where reset codes reach you.</div>
       </div>
     </div>
 
     <div class="content">
 
-      <div class="account-grid">
-        <div class="ledger-panel">
-          <div class="ledger-panel-head"><h2>Your account</h2></div>
-          <div class="ledger-panel-body">
-            <dl class="account-facts">
-              <div><dt>Name</dt><dd id="accName">—</dd></div>
-              <div><dt>Username</dt><dd id="accUsername" class="mono-cell">—</dd></div>
-              <div><dt>Role</dt><dd id="accRole">—</dd></div>
-              <div><dt>Reset email</dt><dd id="accEmail">—</dd></div>
-            </dl>
-            <p class="hint-line">
-              Name, role and email are managed by the Owner on <strong>Staff &amp; Access</strong>.
-              Your reset email is where a forgotten-password code is sent.
-            </p>
-          </div>
-        </div>
-
-        <div class="ledger-panel">
-          <div class="ledger-panel-head"><h2>Change password</h2></div>
-          <div class="ledger-panel-body">
-            <div class="notice" id="approvalNotice"></div>
-
-            <form id="passwordForm" autocomplete="off">
-              <div class="field">
-                <label for="currentPassword">Current password</label>
-                <input type="password" id="currentPassword" maxlength="72" placeholder="Your password now">
-              </div>
-              <div class="form-grid">
-                <div class="field">
-                  <label for="newPassword">New password</label>
-                  <input type="password" id="newPassword" maxlength="72" placeholder="At least 8 characters">
-                </div>
-                <div class="field">
-                  <label for="confirmPassword">Repeat new password</label>
-                  <input type="password" id="confirmPassword" maxlength="72" placeholder="Type it again">
-                </div>
-              </div>
-              <div class="form-actions">
-                <button type="submit" class="btn btn-primary" id="saveBtn">Change password</button>
-              </div>
-            </form>
-
-            <p class="hint-line">
-              Forgot the current password? Sign out and use <strong>Forgot password?</strong> on the
-              login page — a 6-digit code is emailed to you.
-            </p>
-          </div>
-        </div>
+      <div class="notice notice-red" id="mustChangeNotice" hidden>
+        <strong>Choose your own password before anything else.</strong>
+        An administrator set a temporary password for this account. Set a new one now —
+        the rest of the system stays locked until you do.
       </div>
 
-      <div class="ledger-panel" id="pendingPanel" hidden>
-        <div class="ledger-panel-head"><h2>Waiting for approval</h2></div>
+      <div class="ledger-panel">
+        <div class="ledger-panel-head">
+          <h2>Your profile</h2>
+        </div>
         <div class="ledger-panel-body">
-          <p id="pendingText" class="pending-text"></p>
-          <div class="form-actions">
-            <button type="button" class="btn btn-ghost" id="cancelRequestBtn">Cancel request</button>
+
+          <div class="profile-id">
+            <div class="profile-avatar" id="accAvatar" aria-hidden="true">S</div>
+            <div class="profile-name-block">
+              <div class="profile-name" id="accName">—</div>
+              <div class="profile-username" id="accUsername">—</div>
+            </div>
+            <span class="profile-tag" id="accRoleTag">—</span>
           </div>
+
+          <dl class="account-facts">
+            <div><dt>Email</dt><dd id="accEmail">Not set</dd></div>
+            <div><dt>Phone</dt><dd id="accPhone">Not set</dd></div>
+            <div><dt>Role</dt><dd id="accRole">—</dd></div>
+          </dl>
+
+          <div class="notice notice-red profile-warning" id="noEmailNotice" hidden>
+            <strong>No reset email on file.</strong>
+            “Forgot password?” has nowhere to send a code. Add one with <strong>Edit profile</strong> —
+            until then, ask the Owner or Manager for a temporary password.
+          </div>
+
+          <div class="form-actions profile-actions">
+            <button type="button" class="btn btn-ghost" id="editProfileBtn">Edit profile</button>
+            <button type="button" class="btn btn-primary" id="changePasswordBtn">Change password</button>
+          </div>
+
+          <p class="hint-line">
+            Name and role are set by the Owner on <strong>Staff &amp; Access</strong> — they appear on every
+            sale, purchase and expense you record. Your email and phone are yours: change them any time.
+          </p>
+
         </div>
       </div>
 
@@ -86,8 +72,77 @@
   </main>
 </div>
 
+<!-- Edit profile ------------------------------------------------------- -->
+<div class="modal-backdrop" id="profileModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Edit profile</h3>
+      <button type="button" class="modal-close" data-close="profileModal">&times;</button>
+    </div>
+    <div class="modal-body">
+      <form id="contactForm" autocomplete="off">
+        <div class="field">
+          <label for="contactEmail">Email (for password reset codes)</label>
+          <input type="email" id="contactEmail" maxlength="100" placeholder="e.g. you@gmail.com">
+          <div class="hint">A forgotten-password code is sent here. Leave it blank if you have none — then ask the Owner or Manager for a temporary password.</div>
+        </div>
+        <div class="field">
+          <label for="contactPhone">Phone</label>
+          <input type="tel" id="contactPhone" maxlength="20" placeholder="e.g. 01712345678">
+          <div class="hint">Bangladesh mobile number: 11 digits starting with 01.</div>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" data-close="profileModal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="contactSaveBtn">Save changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Change password ---------------------------------------------------- -->
+<div class="modal-backdrop" id="passwordModal">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Change password</h3>
+      <button type="button" class="modal-close" data-close="passwordModal" id="passwordModalClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p class="pending-text" id="tempPasswordNote" hidden>
+        An administrator set a temporary password for this account. Type it as your current password
+        and choose your own — the rest of the system opens as soon as you save.
+      </p>
+      <form id="passwordForm" autocomplete="off">
+        <div class="field">
+          <label for="currentPassword">Current password</label>
+          <input type="password" id="currentPassword" maxlength="72" placeholder="Your password now">
+          <div class="hint">If an administrator set a temporary password, type that one here.</div>
+        </div>
+        <div class="field">
+          <label for="newPassword">New password</label>
+          <input type="password" id="newPassword" maxlength="72" placeholder="e.g. Shop@2026" data-strength="1">
+          <div class="hint">8–72 characters with an uppercase letter, a lowercase letter, a number and a symbol.</div>
+        </div>
+        <div class="field">
+          <label for="confirmPassword">Repeat new password</label>
+          <input type="password" id="confirmPassword" maxlength="72" placeholder="Type it again">
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn btn-ghost" data-close="passwordModal" id="cancelPasswordBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="saveBtn">Save password</button>
+        </div>
+      </form>
+      <p class="hint-line">
+        Your new password works the moment you save it — nobody has to approve it. Forgotten the current
+        one? Sign out and use <strong>Forgot password?</strong> on the login page.
+      </p>
+    </div>
+  </div>
+</div>
+
 <script src="js/store.js"></script>
 <script src="js/app.js"></script>
+<script src="js/password-ui.js"></script>
 <script src="js/account.js"></script>
 </body>
 </html>

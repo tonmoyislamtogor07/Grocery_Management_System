@@ -25,7 +25,7 @@ It replaces paper ledgers, handwritten cash memos and "remembered" dues with one
 | **Profit** | Exact, COGS-based: `sales − cost of goods actually sold − expenses` |
 | **Accountability** | Every sale, purchase and expense stores **which user entered it** |
 | **Staff & Access** | Owner/Manager hire, edit, deactivate accounts; full audit log |
-| **Security** | bcrypt passwords, PDO prepared statements, input validation, login lock, approval-based password change |
+| **Security** | bcrypt passwords, strong-password rule, PDO prepared statements, input validation, login lock, sign-in required again after closing the site |
 | **Reports** | Sales, Purchases, Profit, Top-Selling, Low-Stock & Expiry, Supplier Summary, Staff Activity |
 
 ## 👥 Roles
@@ -39,7 +39,7 @@ It replaces paper ledgers, handwritten cash memos and "remembered" dues with one
 You only type a username and password — the backend finds the role itself.
 Typing a restricted page URL sends you back to your home page, and cost fields are stripped on the server for the cashier role.
 
-> ⚠️ These are demo passwords. Change them before using the system for real.
+> ⚠️ These are demo passwords. Change them before using the system for real. New passwords must be strong (8–72 characters with uppercase, lowercase, a number and a symbol), so pick something like `Sufian@Store26` rather than `admin1234`.
 
 ## 🧰 Tech stack
 
@@ -47,6 +47,7 @@ Typing a restricted page URL sends you back to your home page, and cost fields a
 - **Backend:** PHP 7.4+ (PDO, sessions) — plain JSON APIs in `api/`
 - **Database:** MySQL 5.7+ / 8.x (or MariaDB)
 - **Server:** PHP built-in server or XAMPP
+- **PHP extensions:** `pdo_mysql` (required) and `mbstring` (required — names, password rules and text limits use `mb_strlen`). XAMPP/WAMP ship both; on a Linux server run `sudo apt install php-mbstring` and restart PHP-FPM.
 
 ## 🚀 Getting started
 
@@ -89,7 +90,7 @@ Environment variables `MAIL_HOST`, `MAIL_PORT`, `MAIL_SECURE`, `MAIL_USER`, `MAI
 
 ## 🗄️ Database design
 
-The database has **14 core tables** (shown in the ER diagram), **4 supporting tables** for account security, and one read-only view.
+The database has **17 tables** — 14 business tables plus 3 supporting tables for account security — all shown in the ER diagram, and one read-only view.
 
 ![ER diagram](documentation/gms_er_diagram.png)
 
@@ -99,7 +100,7 @@ The database has **14 core tables** (shown in the ER diagram), **4 supporting ta
 | **Purchasing & stock** | `purchase`, `purchase_detail`, `stock_lot` |
 | **Sales** | `sale`, `sale_detail`, `sale_lot`, `sale_payment` |
 | **Finance** | `expense` |
-| **Supporting (not in ER)** | `staff_log`, `login_attempt`, `password_request`, `password_code` |
+| **Account security** | `staff_log`, `login_attempt`, `password_code` |
 | **View** | `v_product_live` — live stock, average cost and earliest expiry per product |
 
 **Design principles**
@@ -141,15 +142,11 @@ Also: PDO prepared statements everywhere, bcrypt (`password_verify`), HTML/contr
 
 - **Staff & Access** (`api/users.php`) — the Owner can hire Cashiers and Managers, edit, deactivate, change roles, and delete accounts with no history. A Manager can only hire and edit/deactivate **Cashiers**. Nobody can delete or deactivate themselves, or remove the last active Owner. Every action is saved in `staff_log`.
 - **Login lock** — 5 wrong passwords for one username within 15 minutes locks that login (HTTP `429`). It lifts after 15 minutes, or an Owner/Manager presses **Unlock**. Stuck as the only Owner? Run `DELETE FROM login_attempt WHERE username = 'admin';` in phpMyAdmin.
-- **Password change & reset** (`api/password.php`) — change it from **My Account** (current password required) or use **Forgot password?** (6-digit code by email, valid 10 minutes, 5 tries, single use). Approval rules:
-
-  | Who | Who approves |
-  |---|---|
-  | Owner | Nobody — applied immediately |
-  | Manager | The Owner |
-  | Cashier | The Manager or the Owner |
-
-  Until a request is approved, the *current* password keeps working. Pending requests appear on **Staff & Access → Password approvals**.
+- **Password change & reset** (`api/password.php`) — change it from **My Account** (current password required) or use **Forgot password?** (6-digit code by email, valid 10 minutes, 5 tries, single use). **No approval step:** the new password works the moment it is saved, for every role.
+- **Temporary passwords** — when an Owner or Manager sets somebody else's password on **Staff & Access**, that password is *temporary*: the account is marked `must_change_password`, and after signing in that person can only reach **My Account** until they choose their own password (every other API answers HTTP `428`). So an administrator can rescue a locked-out cashier without ever being able to work under that cashier's name.
+- **Own contact details** (`api/profile.php`) — every role edits its own **email and phone** on My Account, at any time. Neither is required at hire time: an inbox or a phone number can change or be lost, so it can be filled in later. Name, role and activation stay with the Owner because they appear on bills and in the audit trail.
+- **Strong password rule** (`v_password()` in `config/db.php`) — a new password needs 8–72 characters and at least one uppercase letter, one lowercase letter, one number and one symbol. Every password box has an eye button to show/hide what is typed, and the new-password fields show a live checklist of these rules.
+- **Sessions** — the login lasts for the current browser tab. Closing the site (the tab's ×) and coming back brings up the login form again; reloading the same tab keeps you signed in. **Log out** clears the session and the cookie.
 
 ## 📄 Pages
 
@@ -165,8 +162,8 @@ Also: PDO prepared statements everywhere, bcrypt (`password_verify`), HTML/contr
 | `customers.html` | Customers (walk-ins need no record) |
 | `purchases.html` | Record goods bought from a supplier |
 | `expenses.html` | Rent, electricity, salary, transport, etc. *(Owner only)* |
-| `staff.html` | Staff & Access — accounts, password approvals, audit log |
-| `account.html` | My Account — change your own password |
+| `staff.html` | Staff & Access — accounts, audit log |
+| `account.html` | My Account — own email/phone, change your own password (applies instantly) |
 | `reports.html` | All reports (Cashier sees a limited set) |
 
 ## 📁 Project structure
@@ -177,7 +174,7 @@ Grocery_Management_System/
 ├── categories.html  suppliers.html  customers.html  purchases.html
 ├── expenses.html  staff.html  account.html  reports.html
 ├── api/
-│   ├── auth.php  password.php  users.php          # login, passwords, staff
+│   ├── auth.php  password.php  profile.php  users.php   # login, passwords, own contact details, staff
 │   ├── products.php  categories.php  suppliers.php  customers.php
 │   ├── purchases.php  sales.php  sale_payments.php  lots.php
 │   ├── expenses.php  dashboard.php

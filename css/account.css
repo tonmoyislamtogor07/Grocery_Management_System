@@ -1,20 +1,63 @@
 /* My Account page rules (base in common.css).
-   Only used by account.html. */
+   Only used by account.html: one profile card, two modals. */
 
-.account-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
-  gap: 18px;
-  align-items: start;
+/* Identity block: avatar + name/username + role chip. */
+
+.profile-id {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 0 16px;
+  border-bottom: 1px solid var(--rule);
 }
 
-@media (max-width: 900px) {
-  .account-grid { grid-template-columns: 1fr; }
+.profile-avatar {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--green-700);
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.profile-name-block { min-width: 0; flex: 1 1 auto; }
+
+.profile-name {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--green-900);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.profile-username {
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-tag {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--sage-100);
+  color: var(--green-700);
+  white-space: nowrap;
 }
 
 /* Read-only facts: label on the left, value on the right. */
+
 .account-facts {
-  margin: 0 0 14px;
+  margin: 14px 0 0;
   border-top: 1px solid var(--rule);
 }
 
@@ -40,6 +83,10 @@
   word-break: break-word;
 }
 
+.profile-warning { margin: 16px 0 0; }
+
+.profile-actions { margin-top: 18px; }
+
 .hint-line {
   font-size: 12.5px;
   color: var(--muted);
@@ -48,6 +95,14 @@
 
 .pending-text {
   font-size: 13.5px;
-  margin: 0 0 12px;
+  margin: 0 0 14px;
   color: var(--ink);
+  border-left: 3px solid var(--turmeric);
+  background: #FBF3E4;
+  padding: 10px 12px;
+  border-radius: var(--radius);
 }
+
+/* Forced password change: the modal cannot be dismissed. */
+
+.is-hidden { display: none !important; }

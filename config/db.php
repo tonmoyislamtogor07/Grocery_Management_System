@@ -85,8 +85,23 @@ function v_name($v, string $field, int $min = 2, int $max = 200): string {
     return $s;
 }
 
-// Password rule: 8–72 characters (bcrypt's hard limit is 72 BYTES).
-// Shared by api/users.php (staff hire/edit) and api/password.php (reset flow).
+/* Password rule (shared by api/users.php, api/password.php and both reset paths).
+   A password must be:
+     - 8–72 characters (72 BYTES is bcrypt's hard limit),
+     - and mix an uppercase letter, a lowercase letter, a number and a symbol.
+   password_rule_missing() lists what is still missing, so the message tells the
+   user exactly what to add instead of a generic "wrong format". */
+function password_rule_missing(string $s): array {
+    $missing = [];
+    if (mb_strlen($s) < 8) $missing[] = 'at least 8 characters';
+    if (strlen($s) > 72) $missing[] = 'at most 72 characters';
+    if (!preg_match('/\p{Lu}/u', $s)) $missing[] = 'an uppercase letter (A–Z)';
+    if (!preg_match('/\p{Ll}/u', $s)) $missing[] = 'a lowercase letter (a–z)';
+    if (!preg_match('/\p{Nd}/u', $s)) $missing[] = 'a number (0–9)';
+    if (!preg_match('/[^\p{L}\p{N}]/u', $s)) $missing[] = 'a symbol (like ! @ # $ %) ';
+    return $missing;
+}
+
 function v_password($v, bool $required): ?string {
     if (is_array($v) || is_object($v) || $v === null) $v = '';
     $s = (string)$v;
@@ -95,8 +110,10 @@ function v_password($v, bool $required): ?string {
         return null;
     }
     if (preg_match('/[\x00-\x1F\x7F]/', $s)) fail('Password contains invalid characters.', 422);
-    if (mb_strlen($s) < 8) fail('Password must be at least 8 characters.', 422);
-    if (strlen($s) > 72) fail('Password is too long (max 72 characters).', 422);
+    $missing = password_rule_missing($s);
+    if (count($missing) > 0) {
+        fail('Password needs ' . implode(', ', array_map('rtrim', $missing)) . '.', 422);
+    }
     return $s;
 }
 
@@ -202,10 +219,24 @@ function current_role(): string {
     return strtolower((string)($_SESSION['role_key'] ?? ''));
 }
 
+// True when an administrator set a temporary password and the owner of the
+// account has not chosen their own yet. api/password.php clears it.
+function password_change_pending(): bool {
+    if (session_status() === PHP_SESSION_NONE) @session_start();
+    return !empty($_SESSION['must_change_password']);
+}
+
 function require_login(): string {
     $role = current_role();
     if (empty($_SESSION['username'] ?? '') || empty($_SESSION['user_id'] ?? 0) || $role === '') {
         fail('Please log in first.', 401);
+    }
+    // A temporary password (set by someone else) must be replaced before any
+    // other page or API is usable. api/password.php is the only way out;
+    // api/profile.php stays open so the holder can still fix their own email.
+    $script = basename((string)($_SERVER['SCRIPT_NAME'] ?? ''));
+    if (password_change_pending() && $script !== 'password.php' && $script !== 'profile.php') {
+        fail('Your password was set by an administrator. Choose your own password on My Account first.', 428);
     }
     return $role;
 }
@@ -359,11 +390,13 @@ function log_staff(PDO $pdo, int $actorId, string $actorName, string $actorUsern
 }
 
 /* ==========================================================================
-   Password reset / approval schema, created on demand so a database imported
-   before this feature keeps working without a migration script.
-   - app_user.email: where a reset code is sent (added to older tables).
-   - password_request: a pending new password waiting for approval.
-     Only the bcrypt hash is stored, never the plain password.
+   Account / password schema, created on demand so a database imported before
+   this feature keeps working without a migration script.
+   - app_user.email: where a reset code is sent (optional; the account holder
+     can add or change it themselves on My Account).
+   - app_user.phone: contact number, also editable on My Account.
+   - app_user.must_change_password: 1 while a temporary password set by an
+     administrator is still in use.
    - password_code: emailed 6-digit code, hashed, with expiry + try count.
    ========================================================================== */
 
@@ -371,27 +404,18 @@ function password_schema_ready(PDO $pdo): void {
     static $done = false;
     if ($done) return;
     $done = true;
-    try {
-        if (!$pdo->query("SHOW COLUMNS FROM app_user LIKE 'email'")->fetch()) {
-            $pdo->exec('ALTER TABLE app_user ADD COLUMN email varchar(100) DEFAULT NULL AFTER full_name');
-        }
-    } catch (Throwable $e) {}
-    try {
-        $pdo->exec(
-            "CREATE TABLE IF NOT EXISTS `password_request` (
-              `request_id` int PRIMARY KEY AUTO_INCREMENT,
-              `user_id` int NOT NULL,
-              `mode` varchar(10) NOT NULL DEFAULT 'change',
-              `new_password_hash` varchar(255) NOT NULL,
-              `status` varchar(12) NOT NULL DEFAULT 'pending',
-              `requested_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-              `decided_by` int DEFAULT NULL,
-              `decided_at` datetime DEFAULT NULL,
-              KEY `idx_pwreq_user` (`user_id`, `status`, `requested_at`),
-              CONSTRAINT `fk_pwreq_user` FOREIGN KEY (`user_id`) REFERENCES `app_user` (`user_id`) ON DELETE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
-        );
-    } catch (Throwable $e) {}
+    $columns = [
+        'email' => 'ALTER TABLE app_user ADD COLUMN email varchar(100) DEFAULT NULL AFTER full_name',
+        'phone' => 'ALTER TABLE app_user ADD COLUMN phone varchar(20) DEFAULT NULL AFTER email',
+        'must_change_password' => 'ALTER TABLE app_user ADD COLUMN must_change_password tinyint(1) NOT NULL DEFAULT 0 AFTER is_active',
+    ];
+    foreach ($columns as $name => $sql) {
+        try {
+            if (!$pdo->query("SHOW COLUMNS FROM app_user LIKE '" . $name . "'")->fetch()) {
+                $pdo->exec($sql);
+            }
+        } catch (Throwable $e) {}
+    }
     try {
         $pdo->exec(
             "CREATE TABLE IF NOT EXISTS `password_code` (

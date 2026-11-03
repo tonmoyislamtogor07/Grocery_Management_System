@@ -47,8 +47,13 @@ const GMS = (function () {
         sessionStorage.setItem('gms_role_label', body.user.role_label || '');
         sessionStorage.setItem('gms_name', body.user.full_name || '');
         sessionStorage.setItem('gms_email', body.user.email || '');
+        sessionStorage.setItem('gms_phone', body.user.phone || '');
+        sessionStorage.setItem('gms_must_change', body.user.must_change_password ? '1' : '0');
       }
     } catch (e) {}
+    // A temporary password keeps every data endpoint closed (HTTP 428) until
+    // My Account saves a new one, so there is nothing worth fetching yet.
+    try { if (sessionStorage.getItem('gms_must_change') === '1') return; } catch (e) {}
     // Cashier never touches purchase costs / payouts / profit endpoints.
     // The backend also enforces these permissions.
     const all = Object.keys(cache);
@@ -116,9 +121,17 @@ const GMS = (function () {
     },
   };
 
-  /* Password change / email reset. api/password.php enforces the approval
-     rules: Owner applies instantly, Manager needs the Owner, Cashier needs
-     the Manager or Owner. */
+  /* Own contact details (email + phone). Any role may edit its own; the name,
+     role and activation stay with the Owner. */
+  const profile = {
+    get: function () { return api('/profile.php'); },
+    save: function (data) {
+      return api('/profile.php', { method: 'PUT', body: JSON.stringify(data) });
+    },
+  };
+
+  /* Password change / email reset. No approval step: api/password.php applies
+     the new password immediately for every role. */
   const account = {
     forgot: function (username) {
       return api('/password.php?action=forgot', { method: 'POST', body: JSON.stringify({ username: username }) });
@@ -128,16 +141,6 @@ const GMS = (function () {
     },
     request: function (data) {
       return api('/password.php?action=request', { method: 'POST', body: JSON.stringify(data) });
-    },
-    list: function () { return api('/password.php?action=list'); },
-    approve: function (id) {
-      return api('/password.php?action=approve&id=' + encodeURIComponent(id), { method: 'POST' });
-    },
-    reject: function (id) {
-      return api('/password.php?action=reject&id=' + encodeURIComponent(id), { method: 'POST' });
-    },
-    cancel: function (id) {
-      return api('/password.php?action=cancel&id=' + encodeURIComponent(id), { method: 'POST' });
     },
   };
 
@@ -314,7 +317,33 @@ const GMS = (function () {
 
   /* ---------------- client-side validation (mirrors PHP v_* rules) -----
      Catches bad input instantly; PHP re-checks everything server-side. */
+
+  // Mirrors password_rule_missing() in config/db.php: 8–72 characters and a
+  // mix of uppercase, lowercase, number and symbol. Used by the strength
+  // checklist (js/password-ui.js) and the submit checks.
+  function passwordRules(v) {
+    const s = String(v == null ? '' : v);
+    return {
+      length: s.length >= 8 && s.length <= 72,
+      upper: /[A-Z]/.test(s),
+      lower: /[a-z]/.test(s),
+      digit: /[0-9]/.test(s),
+      symbol: /[^A-Za-z0-9]/.test(s),
+    };
+  }
+
   const validate = {
+    passwordRules: passwordRules,
+    password: function (v) {
+      const r = passwordRules(v);
+      const missing = [];
+      if (!r.length) missing.push('8–72 characters');
+      if (!r.upper) missing.push('an uppercase letter');
+      if (!r.lower) missing.push('a lowercase letter');
+      if (!r.digit) missing.push('a number');
+      if (!r.symbol) missing.push('a symbol (! @ # $ %)');
+      return missing.length ? 'Password needs ' + missing.join(', ') + '.' : null;
+    },
     name: function (v, field, max) {
       const s = String(v == null ? '' : v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').replace(/\s+/g, ' ').trim();
       if (s.length < 2) return (field || 'Name') + ' must be at least 2 characters.';
@@ -364,6 +393,20 @@ const GMS = (function () {
   /* ---------------- session (real PHP role auth) ---------------- */
   const ROLE_HOME = { owner: 'dashboard.html', manager: 'dashboard.html', cashier: 'cashier.html' };
 
+  /* Per-tab sign-in marker. sessionStorage belongs to one tab and is thrown
+     away when that tab/window is closed, so closing the site (the tab's ×)
+     means signing in again next time — a reload keeps you signed in. */
+  function hasTabToken() {
+    try { return sessionStorage.getItem('gms_tab') === '1'; } catch (e) { return false; }
+  }
+  function clearLocalSession() {
+    try {
+      ['gms_session', 'gms_role', 'gms_role_label', 'gms_name', 'gms_email', 'gms_phone',
+        'gms_must_change', 'gms_tab', 'gms_email_checked']
+        .forEach(function (key) { sessionStorage.removeItem(key); });
+    } catch (e) {}
+  }
+
   const session = {
     login: async function (username, password, role) {
       const res = await fetch(BASE + '/auth.php', {
@@ -379,17 +422,25 @@ const GMS = (function () {
         sessionStorage.setItem('gms_role_label', body.user.role_label || '');
         sessionStorage.setItem('gms_name', body.user.full_name || '');
         sessionStorage.setItem('gms_email', body.user.email || '');
+        sessionStorage.setItem('gms_phone', body.user.phone || '');
+        sessionStorage.setItem('gms_must_change', body.user.must_change_password ? '1' : '0');
+        sessionStorage.setItem('gms_tab', '1'); // this tab is now signed in
       } catch (e) {}
       return body.user;
     },
     logout: async function () {
       try { await fetch(BASE + '/auth.php?action=logout', { credentials: 'same-origin' }); } catch (e) {}
-      try {
-        sessionStorage.removeItem('gms_session');
-        sessionStorage.removeItem('gms_role');
-        sessionStorage.removeItem('gms_role_label');
-      } catch (e) {}
+      clearLocalSession();
       location.href = 'index.html';
+    },
+    hasTabToken: hasTabToken,
+    clearLocal: clearLocalSession,
+    // true while an administrator's temporary password is still in use
+    mustChange: function () {
+      try { return sessionStorage.getItem('gms_must_change') === '1'; } catch (e) { return false; }
+    },
+    clearMustChange: function () {
+      try { sessionStorage.setItem('gms_must_change', '0'); } catch (e) {}
     },
     current: function () {
       try { return sessionStorage.getItem('gms_session'); } catch (e) { return null; }
@@ -409,22 +460,27 @@ const GMS = (function () {
         if (res.ok) {
           const body = await res.json().catch(function () { return null; });
           if (body && body.ok && body.user) {
+            // Server still knows this browser, but this tab was closed and
+            // reopened: ask for the password again instead of walking in.
+            if (!hasTabToken()) {
+              clearLocalSession();
+              location.href = 'index.html';
+              return;
+            }
             try {
               sessionStorage.setItem('gms_session', body.user.username);
               sessionStorage.setItem('gms_role', body.user.role || '');
               sessionStorage.setItem('gms_role_label', body.user.role_label || '');
               sessionStorage.setItem('gms_name', body.user.full_name || '');
               sessionStorage.setItem('gms_email', body.user.email || '');
+        sessionStorage.setItem('gms_phone', body.user.phone || '');
+        sessionStorage.setItem('gms_must_change', body.user.must_change_password ? '1' : '0');
             } catch (e) {}
             return;
           }
         }
       } catch (e) {}
-      try {
-        sessionStorage.removeItem('gms_session');
-        sessionStorage.removeItem('gms_role');
-        sessionStorage.removeItem('gms_role_label');
-      } catch (e) {}
+      clearLocalSession();
       location.href = 'index.html';
     },
   };
@@ -433,7 +489,7 @@ const GMS = (function () {
     ready: ready, refresh: refresh, refreshAll: refreshAll,
     validate: validate,
     categories: categories, products: products, suppliers: suppliers, customers: customers,
-    purchases: purchases, sales: sales, expenses: expenses, staff: staff, account: account,
+    purchases: purchases, sales: sales, expenses: expenses, staff: staff, account: account, profile: profile,
     categoryName: categoryName, supplierName: supplierName, supplierNames: supplierNames, customerName: customerName,
     lineTotal: lineTotal, docSubtotal: docSubtotal, docTotal: docTotal,
     docDiscount: docDiscount, docLines: docLines, docPaid: docPaid, docDue: docDue, stockStatus: stockStatus,

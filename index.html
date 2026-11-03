@@ -28,10 +28,6 @@
         <label for="password">Password</label>
         <input type="password" id="password" placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;" autocomplete="current-password">
       </div>
-      <div class="field checkbox-row">
-        <input type="checkbox" id="remember">
-        <label for="remember" class="login-remember-label">Keep me signed in</label>
-      </div>
       <button type="submit" class="btn btn-primary btn--block-center" id="loginBtn">SIGN IN</button>
       <button type="button" class="login-link-btn" id="forgotLink">Forgot password?</button>
     </form>
@@ -63,7 +59,8 @@
       </div>
       <div class="field">
         <label for="resetPassword">New password</label>
-        <input type="password" id="resetPassword" maxlength="72" placeholder="At least 8 characters">
+        <input type="password" id="resetPassword" maxlength="72" placeholder="e.g. Shop@2026" data-strength="1">
+        <div class="hint">8–72 characters with an uppercase letter, a lowercase letter, a number and a symbol.</div>
       </div>
       <div class="field">
         <label for="resetConfirm">Repeat new password</label>
@@ -75,10 +72,11 @@
 
     <button type="button" class="login-link-btn" id="backToLogin">Back to sign in</button>
 
-    <div class="login-foot">Owner and Manager approvals happen on Staff &amp; Access.</div>
+    <div class="login-foot">The new password works as soon as you save it.</div>
   </div>
 
   <script src="js/store.js"></script>
+  <script src="js/password-ui.js"></script>
   <script>
     // No role picker here — the backend (api/auth.php) finds the account by
     // username/password and returns its role itself:
@@ -101,7 +99,10 @@
       btn.textContent = 'SIGNING IN...';
       try {
         var user = await GMS.session.login(username, password);
-        window.location.href = ROLE_HOME[user.role] || 'dashboard.html';
+        // A temporary password (set by an administrator) must be replaced first.
+        window.location.href = user.must_change_password
+          ? 'account.html'
+          : (ROLE_HOME[user.role] || 'dashboard.html');
       } catch (err) {
         errorBox.textContent = err.message || 'Login failed. Is the PHP server running?';
         errorBox.classList.add('show');
@@ -111,9 +112,7 @@
     });
 
     /* -------- Forgot password: emailed 6-digit code, then a new password ------
-       Owner     -> applies immediately.
-       Manager   -> waits for the Owner to approve it (Staff & Access).
-       Cashier   -> waits for the Manager or Owner to approve it. */
+       The new password applies immediately for every role — no approval. */
     (function () {
       var signInCard = document.getElementById('signInCard');
       var resetCard = document.getElementById('resetCard');
@@ -146,6 +145,7 @@
         codeInput.value = '';
         document.getElementById('resetPassword').value = '';
         document.getElementById('resetConfirm').value = '';
+        if (window.GMSPassword) window.GMSPassword.refreshAll();
         verifyBtn.disabled = false;
         verifyBtn.textContent = 'SET NEW PASSWORD';
         nameField.focus();
@@ -201,25 +201,22 @@
         var again = document.getElementById('resetConfirm').value;
 
         if (code.length !== 6) { say('Enter the 6-digit code from the email.'); codeInput.focus(); return; }
-        if (next.length < 8) { say('The new password needs at least 8 characters.'); return; }
+        var weak = GMS.validate.password(next);
+        if (weak) { say(weak); document.getElementById('resetPassword').focus(); return; }
         if (next !== again) { say('The two new passwords do not match.'); return; }
 
         verifyBtn.disabled = true;
         verifyBtn.textContent = 'CHECKING...';
         try {
           var res = await GMS.account.verify({ username: username, code: code, newPassword: next });
-          say(res.message || 'Done.', true);
-          if (res.status === 'applied') {
-            verifyBtn.textContent = 'PASSWORD CHANGED';
-            document.getElementById('username').value = username;
-            setTimeout(function () {
-              backToSignIn();
-              document.getElementById('password').focus();
-            }, 1600);
-            return; // stay disabled — it worked, leave the button alone
-          }
-          verifyBtn.textContent = 'WAITING FOR APPROVAL';
-          return;
+          say(res.message || 'Password changed.', true);
+          verifyBtn.textContent = 'PASSWORD CHANGED';
+          document.getElementById('username').value = username;
+          setTimeout(function () {
+            backToSignIn();
+            document.getElementById('password').focus();
+          }, 1600);
+          return; // stay disabled — it worked, leave the button alone
         } catch (err) {
           say(err.message || 'Could not change the password.');
         }
@@ -235,21 +232,31 @@
       });
     })();
 
-    // If already logged in, skip straight to that role's home page.
-    fetch('api/auth.php?action=me', { credentials: 'same-origin' }).then(function (r) {
-      if (!r.ok) return null;
-      return r.json();
-    }).then(function (body) {
-      if (body && body.ok && body.user) {
-        var role = body.user.role || 'owner';
-        try {
-          sessionStorage.setItem('gms_session', body.user.username);
-          sessionStorage.setItem('gms_role', role);
-          sessionStorage.setItem('gms_role_label', body.user.role_label || '');
-        } catch (e) {}
-        window.location.href = ROLE_HOME[role] || 'dashboard.html';
-      }
-    }).catch(function () {});
+    // If this tab is already signed in, skip straight to that role's home page.
+    // A freshly opened tab has no per-tab marker, so it shows the login form
+    // and the password is required again.
+    (function () {
+      var tabSignedIn = false;
+      try { tabSignedIn = sessionStorage.getItem('gms_tab') === '1'; } catch (e) {}
+      if (!tabSignedIn) return; // fresh tab: show the form, ask for the password
+      fetch('api/auth.php?action=me', { credentials: 'same-origin' }).then(function (r) {
+        if (!r.ok) return null;
+        return r.json();
+      }).then(function (body) {
+        if (body && body.ok && body.user) {
+          var role = body.user.role || 'owner';
+          try {
+            sessionStorage.setItem('gms_session', body.user.username);
+            sessionStorage.setItem('gms_role', role);
+            sessionStorage.setItem('gms_role_label', body.user.role_label || '');
+            sessionStorage.setItem('gms_must_change', body.user.must_change_password ? '1' : '0');
+          } catch (e) {}
+          window.location.href = body.user.must_change_password
+            ? 'account.html'
+            : (ROLE_HOME[role] || 'dashboard.html');
+        }
+      }).catch(function () {});
+    })();
   </script>
 </body>
 </html>

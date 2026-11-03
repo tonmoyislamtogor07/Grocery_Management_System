@@ -1,0 +1,9 @@
+# Development/demo server: never let the browser run an old copy of a page,
+# script or stylesheet after the file on disk has changed. Without this, a
+# normal reload can keep an outdated js/*.js cached and new behaviour silently
+# does nothing (that is exactly how the "temporary password" redirect broke).
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|js|css)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+</IfModule>

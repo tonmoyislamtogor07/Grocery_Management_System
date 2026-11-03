@@ -546,3 +546,78 @@ input:focus, select:focus, textarea:focus { border-color: var(--green-600); }
 .checkbox-row { display: flex; align-items: center; gap: 8px; }
 
 .checkbox-row input { width: auto; }
+
+/* ---------- Password boxes: show/hide eye + strength checklist ----------
+   Markup is added at runtime by js/password-ui.js, so every password input
+   on every page gets the same behaviour. */
+
+.pw-wrap { position: relative; display: block; }
+
+.pw-wrap > input { padding-right: 44px; }
+
+.pw-eye {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.pw-eye:hover { background: var(--sage-100); color: var(--green-700); }
+.pw-eye.is-on { color: var(--green-700); }
+.pw-eye svg { width: 18px; height: 18px; }
+.pw-eye:focus-visible { outline: 2px solid var(--green-600); outline-offset: 1px; }
+
+.pw-meter { margin-top: 6px; }
+
+.pw-bar {
+  height: 4px;
+  border-radius: 3px;
+  background: var(--sage-200);
+  overflow: hidden;
+}
+
+.pw-bar > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--red);
+  transition: width .18s ease, background .18s ease;
+}
+
+.pw-meter.lvl-mid .pw-bar > i { background: var(--turmeric); }
+.pw-meter.lvl-ok .pw-bar > i { background: var(--green-600); }
+
+.pw-rules {
+  list-style: none;
+  margin: 7px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.pw-rules li { display: flex; align-items: center; gap: 5px; }
+
+.pw-rules li::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rule-dark);
+}
+
+.pw-rules li.ok { color: var(--green-700); }
+.pw-rules li.ok::before { background: var(--green-600); }

@@ -36,27 +36,10 @@
           <div class="table-wrap">
             <table>
               <thead><tr>
-                <th>Name</th><th>Username</th><th>Role</th><th>Reset email</th><th>Access</th>
+                <th>Name</th><th>Username</th><th>Role</th><th>Reset email</th><th>Phone</th><th>Access</th>
                 <th class="cell-num">Records</th><th>Joined</th><th></th>
               </tr></thead>
               <tbody id="tableBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div class="ledger-panel" id="approvalPanel" hidden>
-        <div class="ledger-panel-head">
-          <h2>Password approvals</h2>
-          <span class="text-muted" id="approvalCount"></span>
-        </div>
-        <div class="ledger-panel-body ledger-panel-body--flush">
-          <div class="table-wrap">
-            <table>
-              <thead><tr>
-                <th>Requested</th><th>Staff member</th><th>Role</th><th>How</th><th></th>
-              </tr></thead>
-              <tbody id="approvalBody"></tbody>
             </table>
           </div>
         </div>
@@ -84,7 +67,9 @@
             <li><strong>Permanent delete and role change stay with the Owner.</strong></li>
             <li><strong>5 wrong passwords in a row lock that login for 15 minutes</strong> — a correct password is refused until the lock clears. Owner or Manager can unlock it here.</li>
             <li>Every hire, edit, deactivate, unlock and delete is logged below with who did it and when.</li>
-            <li><strong>Password changes need approval:</strong> a Cashier's new password is approved by the Manager or Owner, a Manager's by the Owner, and the Owner's changes instantly.</li>
+            <li><strong>Password changes apply instantly</strong> for every role — no approval is needed. A new password must be 8–72 characters and mix an uppercase letter, a lowercase letter, a number and a symbol.</li>
+            <li>A password an Owner or Manager sets here is <strong>temporary</strong>: that person must choose their own password once, on My Account, before the rest of the system unlocks — so nobody can work under another person's name.</li>
+            <li>Everyone can change their <strong>own email and phone</strong> on My Account at any time; without an email, “Forgot password?” has nowhere to send a code.</li>
           </ul>
         </div>
       </div>
@@ -132,14 +117,19 @@
             <select id="staffRole"></select>
             <div class="hint">Cashier: counter only. Manager: everything except expenses.</div>
           </div>
-          <div class="field span-2">
+          <div class="field">
             <label for="staffEmail">Email (for password reset codes)</label>
             <input type="email" id="staffEmail" maxlength="100" placeholder="e.g. rahim@gmail.com">
-            <div class="hint">Optional. Without it this person cannot use “Forgot password?” on the login page.</div>
+            <div class="hint">Optional. Without it this person cannot use “Forgot password?” until they add one on My Account.</div>
+          </div>
+          <div class="field">
+            <label for="staffPhone">Phone</label>
+            <input type="tel" id="staffPhone" maxlength="20" placeholder="e.g. 01712345678">
+            <div class="hint">Optional. 11-digit mobile starting with 01 — they can also edit it on My Account.</div>
           </div>
           <div class="field span-2">
             <label for="staffPassword" id="passwordLabel">Password</label>
-            <input type="password" id="staffPassword" maxlength="72" placeholder="At least 8 characters">
+            <input type="password" id="staffPassword" maxlength="72" placeholder="e.g. Shop@2026">
             <div class="hint" id="passwordHint">The staff member can sign in with this username and password.</div>
           </div>
         </div>
@@ -154,6 +144,7 @@
 
 <script src="js/store.js"></script>
 <script src="js/app.js"></script>
+<script src="js/password-ui.js"></script>
 <script src="js/staff.js"></script>
 </body>
 </html>

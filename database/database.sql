@@ -27,7 +27,6 @@ DROP TABLE IF EXISTS expense;
 DROP TABLE IF EXISTS staff_log;
 DROP TABLE IF EXISTS login_attempt;
 DROP TABLE IF EXISTS password_code;
-DROP TABLE IF EXISTS password_request;
 DROP TABLE IF EXISTS app_user;
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -39,11 +38,16 @@ CREATE TABLE `app_user` (
   `username` varchar(100) NOT NULL UNIQUE,
   `password_hash` varchar(255) NOT NULL,
   `full_name` varchar(150) DEFAULT NULL,
-  -- Where a "Forgot password?" code is emailed. Optional: an account with no
-  -- email on file cannot reset its own password (the Owner can still set one).
+  -- Where a "Forgot password?" code is emailed. Optional at hire time; the
+  -- account holder can add or change it on My Account at any time (api/profile.php).
   `email` varchar(100) DEFAULT NULL,
+  -- Contact number, same rule: editable by the account holder on My Account.
+  `phone` varchar(20) DEFAULT NULL,
   `role` enum('admin','manager','staff') NOT NULL DEFAULT 'admin',
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  -- 1 while a temporary password set by an administrator is still in use. The
+  -- holder must pick their own password on My Account before anything else.
+  `must_change_password` tinyint(1) NOT NULL DEFAULT 0,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -76,23 +80,6 @@ CREATE TABLE `login_attempt` (
   `success` tinyint(1) NOT NULL DEFAULT 0,
   `attempted_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   KEY `idx_login_attempt_user` (`username`, `attempted_at`)
-);
-
--- A new password waiting for approval (My Account / Forgot password).
--- Only the bcrypt hash is stored, never the plain password, and the current
--- password keeps working until an approver accepts it:
---   Cashier -> Manager or Owner   Manager -> Owner   Owner -> nobody.
-CREATE TABLE `password_request` (
-  `request_id` int PRIMARY KEY AUTO_INCREMENT,
-  `user_id` int NOT NULL,
-  `mode` varchar(10) NOT NULL DEFAULT 'change',
-  `new_password_hash` varchar(255) NOT NULL,
-  `status` varchar(12) NOT NULL DEFAULT 'pending',
-  `requested_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `decided_by` int DEFAULT NULL,
-  `decided_at` datetime DEFAULT NULL,
-  KEY `idx_pwreq_user` (`user_id`, `status`, `requested_at`),
-  CONSTRAINT `fk_pwreq_user` FOREIGN KEY (`user_id`) REFERENCES `app_user` (`user_id`) ON DELETE CASCADE
 );
 
 -- Emailed 6-digit reset code: hashed, 10 minutes, 5 tries, one use.
@@ -289,10 +276,12 @@ GROUP BY p.product_id;
 
 -- All users start active. To remove a user from login, set is_active = 0;
 -- do not DELETE while the user owns sale/purchase/expense history (RESTRICT).
-INSERT INTO `app_user` (`user_id`, `username`, `password_hash`, `full_name`, `role`, `is_active`) VALUES
-(1, 'admin', '$2y$10$c4kvCW8Jv5TU3aRo5h24hefCCOU8Dd/o72DsM6YliTGpuvMs5.RW2', 'Store Owner', 'admin', 1),
-(2, 'manager', '$2y$10$wZjq.N9HUmu11MRxWpegk.7f4/lUEDaJliBW7RftzL.Sniv.NXM62', 'Store Manager', 'manager', 1),
-(3, 'cashier', '$2y$10$bwdS2urRYfTnLAXgDWGcpuX3eomYxM2g6C7gumP2lCjOwyYUsdsCK', 'Store Cashier', 'staff', 1);
+-- No email is seeded: each person adds their own on My Account so reset codes
+-- reach the real inbox.
+INSERT INTO `app_user` (`user_id`, `username`, `password_hash`, `full_name`, `phone`, `role`, `is_active`) VALUES
+(1, 'admin', '$2y$10$c4kvCW8Jv5TU3aRo5h24hefCCOU8Dd/o72DsM6YliTGpuvMs5.RW2', 'Store Owner', '01711000001', 'admin', 1),
+(2, 'manager', '$2y$10$wZjq.N9HUmu11MRxWpegk.7f4/lUEDaJliBW7RftzL.Sniv.NXM62', 'Store Manager', '01711000002', 'manager', 1),
+(3, 'cashier', '$2y$10$bwdS2urRYfTnLAXgDWGcpuX3eomYxM2g6C7gumP2lCjOwyYUsdsCK', 'Store Cashier', '01711000003', 'staff', 1);
 
 INSERT INTO `category` (`category_id`, `category_name`, `description`) VALUES
 (1, 'Rice & Grains', NULL),

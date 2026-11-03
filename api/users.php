@@ -25,8 +25,8 @@ function staff_role_label(string $key): string {
     return ROLE_UI_LABEL[$key] ?? ucfirst($key);
 }
 
-/* staff_log_ready() + log_staff() live in config/db.php so the password
-   approval code writes to the same audit trail. */
+/* staff_log_ready() + log_staff() live in config/db.php so password changes
+   (api/password.php) write to the same audit trail. */
 
 // v_password() lives in config/db.php (shared with api/password.php).
 
@@ -59,7 +59,9 @@ function map_staff(array $r, int $activity = 0, int $lockMinutes = 0): array {
         'role'        => $key,
         'roleLabel'   => staff_role_label($key),
         'email'       => (string)($r['email'] ?? ''),
+        'phone'       => (string)($r['phone'] ?? ''),
         'isActive'    => (int)$r['is_active'] === 1,
+        'mustChangePassword' => ((int)($r['must_change_password'] ?? 0) === 1),
         'activity'    => $activity,
         'locked'      => $lockMinutes > 0,
         'lockMinutes' => $lockMinutes,
@@ -180,7 +182,8 @@ try {
         $username = v_username($in['username'] ?? '');
         $fullName = v_name($in['fullName'] ?? '', 'Full name', 2, 150);
         $password = v_password($in['password'] ?? '', true);
-        $email = v_email($in['email'] ?? '', 'Email'); // reset codes go here
+        $email = v_email($in['email'] ?? '', 'Email'); // reset codes go here (optional)
+        $phone = v_phone($in['phone'] ?? '', 'Phone');  // contact number (optional)
         $wantKey  = strtolower(trim((string)($in['role'] ?? '')));
 
         if (!isset(ROLE_DB[$wantKey])) fail('Choose a role: Cashier or Manager.', 422);
@@ -194,8 +197,8 @@ try {
         $st->execute([$username]);
         if ($st->fetch()) fail('That username is already taken. Pick another one.', 409);
 
-        $pdo->prepare('INSERT INTO app_user (username, password_hash, full_name, email, role, is_active) VALUES (?, ?, ?, ?, ?, 1)')
-            ->execute([$username, password_hash($password, PASSWORD_DEFAULT), $fullName, $email, ROLE_DB[$wantKey]]);
+        $pdo->prepare('INSERT INTO app_user (username, password_hash, full_name, email, phone, role, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)')
+            ->execute([$username, password_hash($password, PASSWORD_DEFAULT), $fullName, $email, $phone, ROLE_DB[$wantKey]]);
         $id = (int)$pdo->lastInsertId();
 
         $st = $pdo->prepare('SELECT * FROM app_user WHERE user_id = ?');
@@ -231,6 +234,11 @@ try {
         $email = array_key_exists('email', $in)
             ? v_email($in['email'], 'Email')
             : ((string)($target['email'] ?? '') !== '' ? (string)$target['email'] : null);
+        // Same rule for the contact number: only touched when the request
+        // carries the field, so a deactivate-only request keeps it.
+        $phone = array_key_exists('phone', $in)
+            ? v_phone($in['phone'], 'Phone')
+            : ((string)($target['phone'] ?? '') !== '' ? (string)$target['phone'] : null);
 
         $wantKey = $targetKey;
         if (isset($in['role']) && trim((string)$in['role']) !== '') {
@@ -262,20 +270,30 @@ try {
 
         $oldEmail = (string)($target['email'] ?? '');
         $newEmail = (string)($email ?? '');
+        $oldPhone = (string)($target['phone'] ?? '');
+        $newPhone = (string)($phone ?? '');
+
+        // A password set by SOMEBODY ELSE is temporary: the account holder must
+        // replace it on My Account before the rest of the system opens up, so
+        // the administrator can never work as them unseen.
+        $tempPassword = $password !== null && $id !== $meId;
 
         $changes = [];
         if ($fullName !== (string)($target['full_name'] ?? '')) $changes[] = 'Name updated';
         if ($newEmail !== $oldEmail) $changes[] = $newEmail === '' ? 'Email removed' : 'Email updated';
+        if ($newPhone !== $oldPhone) $changes[] = $newPhone === '' ? 'Phone removed' : 'Phone updated';
         if ($roleChanged) $changes[] = 'Role ' . staff_role_label($targetKey) . ' → ' . staff_role_label($wantKey);
         if ($isActive !== $wasActive) $changes[] = $isActive ? 'Account reactivated' : 'Account deactivated';
-        if ($password !== null) $changes[] = 'Password reset';
+        if ($tempPassword) $changes[] = 'Temporary password set — they must choose a new one at next login';
+        elseif ($password !== null) $changes[] = 'Password reset';
 
-        $sql = 'UPDATE app_user SET full_name = ?, email = ?, role = ?, is_active = ?';
-        $args = [$fullName, $email, ROLE_DB[$wantKey], $isActive ? 1 : 0];
+        $sql = 'UPDATE app_user SET full_name = ?, email = ?, phone = ?, role = ?, is_active = ?';
+        $args = [$fullName, $email, $phone, ROLE_DB[$wantKey], $isActive ? 1 : 0];
         if ($password !== null) {
             $sql .= ', password_hash = ?';
             $args[] = password_hash($password, PASSWORD_DEFAULT);
         }
+        if ($tempPassword) $sql .= ', must_change_password = 1';
         $sql .= ' WHERE user_id = ?';
         $args[] = $id;
         $pdo->prepare($sql)->execute($args);
@@ -286,6 +304,10 @@ try {
 
         // A new password also clears a lock: the old guesses no longer apply.
         if ($password !== null) clear_login_attempts($pdo, (string)$target['username']);
+
+        if ($password !== null && !$tempPassword) {
+            $pdo->prepare('UPDATE app_user SET must_change_password = 0 WHERE user_id = ?')->execute([$id]);
+        }
 
         log_staff($pdo, $meId, $meName, $meUsername, $role, $id, $fullName, (string)$target['username'], $wantKey,
             $action, count($changes) ? implode(' · ', $changes) : 'No changes');
